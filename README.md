@@ -17,16 +17,22 @@ Compile the project:
 sbt compile
 ```
 
+Run the tests:
+
+```sh
+sbt test
+```
+
 Format Scala sources and build files using [`.scalafmt.conf`](.scalafmt.conf):
 
 ```sh
-sbt scalafmtSbt scalafmtAll
+sbt --batch "; scalafmtSbt; scalafmtAll"
 ```
 
 Check formatting and compilation:
 
 ```sh
-sbt --batch scalafmtSbtCheck scalafmtCheckAll compile
+sbt --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile"
 ```
 
 Contributor guidance is in [`AGENTS.md`](AGENTS.md).

@@ -18,7 +18,7 @@ The build definitions and formatter configuration are authoritative for tool ver
 For code and build changes, run:
 
 ```sh
-sbt --batch scalafmtSbtCheck scalafmtCheckAll compile
+sbt --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile"
 ```
 
 Run relevant tests when available, starting with the smallest affected suite.
