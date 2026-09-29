@@ -1,0 +1,45 @@
+# Synthetic configuration; both sessions deliberately share a start URL.
+[default]
+sso_session = Work
+sso_account_id = 111122223333
+sso_role_name = ReadOnlyAccess
+region = us-west-2
+
+[profile staging]
+sso_session = Work
+sso_account_id = 000011112222
+sso_role_name = DeveloperAccess
+region = eu-west-1
+output = json
+cli_pager =
+s3 =
+    addressing_style = path
+    sso_account_id = 999999999999
+
+[profile production]
+sso_session = work
+sso_account_id = 444455556666
+sso_role_name = ReadOnlyAccess
+
+; The parser must resolve the exact session name, including case.
+[sso-session Work]
+sso_start_url = https://example.awsapps.com/start
+sso_region = eu-central-1
+sso_registration_scopes = sso:account:access
+
+[sso-session work]
+sso_start_url = https://example.awsapps.com/start
+sso_region = us-east-1
+
+[profile external]
+credential_process = example-provider --option=value
+
+[profile legacy]
+sso_start_url = https://example.awsapps.com/start
+sso_region = eu-central-1
+sso_account_id = 111122223333
+sso_role_name = ReadOnlyAccess
+
+[services local]
+s3 =
+    endpoint_url = http://localhost:9000
