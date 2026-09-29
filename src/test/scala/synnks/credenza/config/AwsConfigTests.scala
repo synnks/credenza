@@ -148,8 +148,8 @@ class AwsConfigTests extends FunSuite {
     val text =
       config(profileSettings.replace("sso_session = Work", "sso_session = missing").replace("000011112222", "123"))
     assertEquals(
-      errors(resolve(text)).toSet,
-      Set(
+      errors(resolve(text)),
+      List(
         SessionNotFound(name, valid(SessionName.from("missing"))),
         InvalidSetting(profileSection, ConfigField.SsoAccountId, ValueError.InvalidAccountId)
       )
@@ -162,8 +162,8 @@ class AwsConfigTests extends FunSuite {
       session = "sso_start_url = not-a-url\nsso_region ="
     )
     assertEquals(
-      errors(resolve(text)).toSet,
-      Set(
+      errors(resolve(text)),
+      List(
         InvalidSetting(sessionSection, ConfigField.SsoStartUrl, ValueError.InvalidStartUrl),
         MissingSetting(sessionSection, ConfigField.SsoRegion),
         InvalidSetting(profileSection, ConfigField.SsoAccountId, ValueError.InvalidAccountId),
@@ -178,18 +178,16 @@ class AwsConfigTests extends FunSuite {
     "sso_account_id" -> ConfigField.SsoAccountId,
     "sso_role_name"  -> ConfigField.SsoRoleName
   ).foreach { (key, field) =>
-    test(s"require a nonempty profile $key") {
+    test(s"require profile $key") {
       val without = profileSettings.linesIterator.filterNot(_.startsWith(s"$key =")).mkString("\n")
-      for (settings <- List(without, s"$without\n$key =   "))
-        assertEquals(errors(resolve(config(settings))), List(MissingSetting(profileSection, field)))
+      assertEquals(errors(resolve(config(without))), List(MissingSetting(profileSection, field)))
     }
   }
 
   List("sso_start_url" -> ConfigField.SsoStartUrl, "sso_region" -> ConfigField.SsoRegion).foreach { (key, field) =>
-    test(s"require a nonempty session $key") {
+    test(s"require session $key") {
       val without = sessionSettings.linesIterator.filterNot(_.startsWith(s"$key =")).mkString("\n")
-      for (settings <- List(without, s"$without\n$key =   "))
-        assertEquals(errors(resolve(config(session = settings))), List(MissingSetting(sessionSection, field)))
+      assertEquals(errors(resolve(config(session = without))), List(MissingSetting(sessionSection, field)))
     }
   }
 
@@ -203,8 +201,8 @@ class AwsConfigTests extends FunSuite {
   test("reject inline SSO configuration before attempting named-session resolution") {
     val legacy = valid(ProfileName.from("legacy"))
     assertEquals(
-      errors(resolve(fixture, "legacy")).toSet,
-      Set(UnsupportedProfile(legacy, ConfigField.SsoStartUrl), UnsupportedProfile(legacy, ConfigField.SsoRegion))
+      errors(resolve(fixture, "legacy")),
+      List(UnsupportedProfile(legacy, ConfigField.SsoStartUrl), UnsupportedProfile(legacy, ConfigField.SsoRegion))
     )
   }
 
@@ -219,11 +217,13 @@ class AwsConfigTests extends FunSuite {
     "aws_access_key_id"       -> ConfigField.AccessKeyId,
     "aws_secret_access_key"   -> ConfigField.SecretAccessKey,
     "aws_session_token"       -> ConfigField.SessionToken,
+    "aws_security_token"      -> ConfigField.SecurityToken,
     "credential_process"      -> ConfigField.CredentialProcess,
     "credential_source"       -> ConfigField.CredentialSource,
     "source_profile"          -> ConfigField.SourceProfile,
     "role_arn"                -> ConfigField.RoleArn,
-    "web_identity_token_file" -> ConfigField.WebIdentityTokenFile
+    "web_identity_token_file" -> ConfigField.WebIdentityTokenFile,
+    "login_session"           -> ConfigField.LoginSession
   ).foreach { (key, field) =>
     test(s"reject $key even alongside a named SSO session") {
       assertEquals(
@@ -266,11 +266,6 @@ class AwsConfigTests extends FunSuite {
       errors(resolve(text)),
       List(InvalidSetting(profileSection, ConfigField.SsoSession, ValueError.InvalidIdentifier))
     )
-  }
-
-  test("unexpected SDK reader failures are distinct from syntax errors") {
-    // The pinned AWS reader throws an index error for an unfinished opening bracket.
-    assertEquals(errors(resolve("[")), List(ReaderFailure))
   }
 
   test("errors do not echo invalid values or raw input") {

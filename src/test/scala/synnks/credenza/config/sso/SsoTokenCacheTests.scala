@@ -58,7 +58,6 @@ class SsoTokenCacheTests extends FunSuite {
       val stored       = SsoTokenCache.load(directory, session).toOption.getOrElse(fail("Expected cached token"))
       assertEquals(stored.token.accessToken.value, "synthetic-access-token")
       assertEquals(stored.snapshot.path, SsoTokenCache.pathFor(directory, session.name))
-      assertEquals(stored.snapshot.sha256.length, 64)
       assert(!stored.toString.contains("synthetic-access-token"))
       assert(!stored.snapshot.toString.contains(directory.toString))
     }

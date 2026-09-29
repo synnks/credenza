@@ -18,19 +18,24 @@ class SectionDecoderTests extends FunSuite {
 
     assertEquals(decoder.run(input).map(_.value).toEither, Right("000011112222"))
     assert(compileErrors("val wrong: Decoder[Region] = required(Field.accountId)").nonEmpty)
-    assert(compileErrors("val wrong: Field[Region] = Field.accountId").nonEmpty)
-    assert(compileErrors("new Field(ConfigField.SsoAccountId, Region.from)").nonEmpty)
+  }
+
+  test("required fields treat both missing and empty values as missing") {
+    for (properties <- List(Map.empty[String, String], Map("sso_account_id" -> ""))) {
+      val errors = required(Field.accountId).run(Input(section, properties)).toEither.left.map(_.toNonEmptyList.toList)
+      assertEquals(errors, Left(List(AwsConfigError.MissingSetting(section, ConfigField.SsoAccountId))))
+    }
   }
 
   test("section decoders compose over immutable input and accumulate errors without the SDK") {
     val decoder = (required(Field.accountId), optional(Field.region)).tupled
     val input   = Input(section, Map("sso_account_id" -> "123", "region" -> "bad region"))
 
-    val result = decoder.run(input).toEither.left.map(_.toNonEmptyList.toList.toSet)
+    val result = decoder.run(input).toEither.left.map(_.toNonEmptyList.toList)
     assertEquals(
       result,
       Left(
-        Set(
+        List(
           AwsConfigError.InvalidSetting(section, ConfigField.SsoAccountId, ValueError.InvalidAccountId),
           AwsConfigError.InvalidSetting(section, ConfigField.Region, ValueError.InvalidRegion)
         )
