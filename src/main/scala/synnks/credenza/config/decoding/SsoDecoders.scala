@@ -3,6 +3,7 @@ package synnks.credenza.config.decoding
 import cats.data.{ Kleisli, Validated }
 import cats.syntax.all.*
 import synnks.credenza.config.model.*
+import synnks.credenza.config.model.ConfigNames.{ ProfileName, SessionName }
 
 private[config] object SsoDecoders {
   import SectionDecoder.*
@@ -44,7 +45,7 @@ private[config] object SsoDecoders {
     ConfigField.LoginSession
   )
 
-  private def validateProvider(name: ProfileName, input: SectionInput): Validation[Unit] =
+  private def validateProvider(name: ProfileName, input: Input): Validation[Unit] =
     incompatibleProfileFields.traverse_ { field =>
       Validated.condNec(!input.properties.contains(field.key), (), AwsConfigError.UnsupportedProfile(name, field))
     }

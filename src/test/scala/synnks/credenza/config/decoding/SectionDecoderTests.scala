@@ -3,6 +3,8 @@ package synnks.credenza.config.decoding
 import cats.syntax.all.*
 import munit.FunSuite
 import synnks.credenza.config.model.*
+import synnks.credenza.config.model.ConfigNames.ProfileName
+import synnks.credenza.config.model.AwsConfigError.Section as ConfigSection
 
 class SectionDecoderTests extends FunSuite {
   import SectionDecoder.*
@@ -12,7 +14,7 @@ class SectionDecoderTests extends FunSuite {
 
   test("the account field determines the decoder's result type") {
     val decoder: Decoder[AccountId] = required(Field.accountId)
-    val input                       = SectionInput(section, Map("sso_account_id" -> "000011112222"))
+    val input                       = Input(section, Map("sso_account_id" -> "000011112222"))
 
     assertEquals(decoder.run(input).map(_.value).toEither, Right("000011112222"))
     assert(compileErrors("val wrong: Decoder[Region] = required(Field.accountId)").nonEmpty)
@@ -22,7 +24,7 @@ class SectionDecoderTests extends FunSuite {
 
   test("section decoders compose over immutable input and accumulate errors without the SDK") {
     val decoder = (required(Field.accountId), optional(Field.region)).tupled
-    val input   = SectionInput(section, Map("sso_account_id" -> "123", "region" -> "invalid"))
+    val input   = Input(section, Map("sso_account_id" -> "123", "region" -> "invalid"))
 
     val result = decoder.run(input).toEither.left.map(_.toNonEmptyList.toList.toSet)
     assertEquals(
@@ -38,7 +40,7 @@ class SectionDecoderTests extends FunSuite {
 
   test("raw section representations redact property values") {
     val secret = "synthetic-secret-value"
-    val input  = SectionInput(section, Map("aws_secret_access_key" -> secret))
+    val input  = Input(section, Map("aws_secret_access_key" -> secret))
 
     assert(!input.toString.contains(secret))
   }

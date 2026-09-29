@@ -1,10 +1,11 @@
-package synnks.credenza.config.decoding
+package synnks.credenza.config.sso
 
 import cats.data.{ EitherNec, ValidatedNec }
 import cats.syntax.all.*
 import io.circe.{ Json, JsonObject }
 import io.circe.parser.parse
-import synnks.credenza.config.model.*
+import synnks.credenza.config.model.{ Region, SsoSession, SsoStartUrl }
+import SsoCachedToken.{ Error as SsoTokenError, RefreshMaterial, Secret }
 
 import java.time.{ Instant, OffsetDateTime }
 import scala.util.Try

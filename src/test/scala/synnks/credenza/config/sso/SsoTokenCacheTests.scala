@@ -1,7 +1,9 @@
-package synnks.credenza.config.reader
+package synnks.credenza.config.sso
 
 import munit.FunSuite
 import synnks.credenza.config.model.*
+import synnks.credenza.config.model.ConfigNames.SessionName
+import SsoCachedToken.Error as SsoTokenError
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{ Files, Path }

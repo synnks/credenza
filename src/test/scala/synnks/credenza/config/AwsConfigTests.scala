@@ -3,6 +3,8 @@ package synnks.credenza.config
 import cats.data.EitherNec
 import munit.FunSuite
 import synnks.credenza.config.model.*
+import synnks.credenza.config.model.ConfigNames.{ ProfileName, SessionName }
+import synnks.credenza.config.model.AwsConfigError.Section as ConfigSection
 
 import scala.io.Source
 import scala.util.Using

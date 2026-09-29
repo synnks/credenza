@@ -1,8 +1,10 @@
-package synnks.credenza.config.decoding
+package synnks.credenza.config.sso
 
 import cats.data.EitherNec
 import munit.FunSuite
 import synnks.credenza.config.model.*
+import synnks.credenza.config.model.ConfigNames.SessionName
+import SsoCachedToken.Error as SsoTokenError
 
 import java.time.Instant
 import scala.io.Source

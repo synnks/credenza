@@ -6,6 +6,7 @@ Read the relevant source package and its mirrored tests before making changes.
 ## Functional Design
 
 - Keep AWS SDK parsing and Java collection conversion in `config/reader/`; decoders operate on immutable section data.
+- Keep SSO cache I/O, JSON decoding, and their supporting types together in `config/sso/`.
 - Bind configuration keys to their value types through `Field[A]`, and construct domain values through their validated constructors.
 - Compose independent validation with Cats; use sequential validation when a lookup depends on a decoded value.
 - Keep provider-support policy in the SSO decoders, separate from configuration-key metadata.

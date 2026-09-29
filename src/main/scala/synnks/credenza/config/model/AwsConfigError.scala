@@ -1,23 +1,15 @@
 package synnks.credenza.config.model
 
-enum ConfigSection {
-  case Profile(name: ProfileName)
-  case Session(name: SessionName)
-
-  def label: String = this match {
-    case Profile(name) if name.value == "default" => "[default]"
-    case Profile(name)                            => s"[profile ${name.value}]"
-    case Session(name)                            => s"[sso-session ${name.value}]"
-  }
-}
+import ConfigNames.{ ProfileName, SessionName }
+import AwsConfigError.Section
 
 enum AwsConfigError {
   case InvalidSyntax
   case ReaderFailure
   case ProfileNotFound(name: ProfileName)
   case SessionNotFound(profile: ProfileName, session: SessionName)
-  case MissingSetting(section: ConfigSection, setting: ConfigField)
-  case InvalidSetting(section: ConfigSection, setting: ConfigField, reason: ValueError)
+  case MissingSetting(section: Section, setting: ConfigField)
+  case InvalidSetting(section: Section, setting: ConfigField, reason: ValueError)
   case UnsupportedProfile(profile: ProfileName, setting: ConfigField)
 
   def message: String = this match {
@@ -31,5 +23,18 @@ enum AwsConfigError {
       s"Invalid '${setting.key}' in ${section.label}: expected ${reason.expected}."
     case UnsupportedProfile(profile, setting)     =>
       s"AWS profile '${profile.value}' uses unsupported setting '${setting.key}'; use a named SSO session without other credential providers."
+  }
+}
+
+object AwsConfigError {
+  enum Section {
+    case Profile(name: ProfileName)
+    case Session(name: SessionName)
+
+    def label: String = this match {
+      case Profile(name) if name.value == "default" => "[default]"
+      case Profile(name)                            => s"[profile ${name.value}]"
+      case Session(name)                            => s"[sso-session ${name.value}]"
+    }
   }
 }

@@ -1,6 +1,7 @@
 package synnks.credenza.config.model
 
 import munit.FunSuite
+import ConfigNames.{ ProfileName, SessionName }
 
 class ProfileValuesTests extends FunSuite {
   test("account IDs preserve leading zeroes and require twelve ASCII digits") {

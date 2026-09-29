@@ -7,15 +7,12 @@ import synnks.credenza.config.model.{ AwsConfigError, ConfigField }
 import scala.jdk.CollectionConverters.*
 import scala.jdk.OptionConverters.*
 
-final private[config] case class AwsConfigSections(
-  profiles: Map[String, Map[String, String]],
-  sessions: Map[String, Map[String, String]]
-) {
-  override def toString: String = "AwsConfigSections(<redacted>)"
-}
-
 private[config] object AwsProfileReader {
-  def read(text: String): Either[AwsConfigError, AwsConfigSections] =
+  final case class Sections(profiles: Map[String, Map[String, String]], sessions: Map[String, Map[String, String]]) {
+    override def toString: String = "Sections(<redacted>)"
+  }
+
+  def read(text: String): Either[AwsConfigError, Sections] =
     Either
       .catchNonFatal {
         ProfileFile.builder().content(text).`type`(ProfileFile.Type.CONFIGURATION).build()
@@ -26,7 +23,7 @@ private[config] object AwsProfileReader {
       }
       .map(snapshot)
 
-  private def snapshot(file: ProfileFile): AwsConfigSections = {
+  private def snapshot(file: ProfileFile): Sections = {
     val profiles = file
       .profiles()
       .asScala
@@ -44,6 +41,6 @@ private[config] object AwsProfileReader {
       }
     }.toMap
 
-    AwsConfigSections(profiles, sessions)
+    Sections(profiles, sessions)
   }
 }

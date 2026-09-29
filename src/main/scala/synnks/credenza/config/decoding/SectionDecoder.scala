@@ -3,16 +3,17 @@ package synnks.credenza.config.decoding
 import cats.data.{ Kleisli, ValidatedNec }
 import cats.syntax.all.*
 import synnks.credenza.config.model.*
-
-final private[config] case class SectionInput(section: ConfigSection, properties: Map[String, String]) {
-  override def toString: String = s"SectionInput(${section.label}, <redacted>)"
-}
+import AwsConfigError.Section
 
 private[config] object SectionDecoder {
   import AwsConfigError.*
 
+  final case class Input(section: Section, properties: Map[String, String]) {
+    override def toString: String = s"Input(${section.label}, <redacted>)"
+  }
+
   type Validation[A] = ValidatedNec[AwsConfigError, A]
-  type Decoder[A]    = Kleisli[Validation, SectionInput, A]
+  type Decoder[A]    = Kleisli[Validation, Input, A]
 
   def required[A](field: Field[A]): Decoder[A] = Kleisli { input =>
     input.properties
@@ -26,6 +27,6 @@ private[config] object SectionDecoder {
     input.properties.get(field.id.key).traverse(value => decode(field, input.section, value))
   }
 
-  private def decode[A](field: Field[A], section: ConfigSection, value: String): Validation[A] =
+  private def decode[A](field: Field[A], section: Section, value: String): Validation[A] =
     field.decode(value).leftMap(InvalidSetting(section, field.id, _)).toValidatedNec
 }
