@@ -36,4 +36,9 @@ The token decoder checks the record's start URL and SSO region against the selec
 
 An expired record remains readable; asking for a usable access token reports that the login has expired. Automatic refresh and credential resolution are not implemented yet.
 
+## Host Source
+
+[`SsoSource`](src/main/scala/synnks/credenza/config/sso/SsoSource.scala) uses the AWS SDK to locate the config file, including `AWS_CONFIG_FILE` overrides. It reads the named profile and its exact cache entry, reporting missing, unreadable, invalid, or expired sessions without exposing cached credentials.
+The host entry point reads the home directory through Cats Effect's environment and system-property APIs. File paths and the evaluation time can be supplied explicitly for testing.
+
 Agent development instructions are in [`AGENTS.md`](AGENTS.md).

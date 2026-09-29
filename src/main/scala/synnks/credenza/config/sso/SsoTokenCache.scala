@@ -25,6 +25,8 @@ object SsoTokenCache {
 
   private def hex(bytes: Array[Byte]): String = bytes.iterator.map(b => f"${b & 0xff}%02x").mkString
 
+  def defaultDirectory(home: Path): Path = home.resolve(".aws").resolve("sso").resolve("cache")
+
   def pathFor(directory: Path, name: SessionName): Path = {
     val bytes = MessageDigest.getInstance("SHA-1").digest(name.value.getBytes(StandardCharsets.UTF_8))
     directory.resolve(hex(bytes) + ".json")
