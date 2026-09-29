@@ -1,6 +1,7 @@
 package synnks.credenza.config.model
 
 import munit.FunSuite
+import ConfigNames.{ ProfileName, SessionName }
 
 class ProfileValuesTests extends FunSuite {
   test("account IDs preserve leading zeroes and require twelve ASCII digits") {
@@ -25,10 +26,20 @@ class ProfileValuesTests extends FunSuite {
       assertEquals(RoleName.from(value), Left(ValueError.InvalidRoleName))
   }
 
-  test("region names accommodate AWS partition naming conventions") {
-    for (value <- List("eu-central-1", "us-gov-west-1", "cn-north-1", "us-isob-east-1", "eusc-de-east-1"))
+  test("region values preserve future naming conventions without trying to verify AWS availability") {
+    for (
+      value <- List(
+                 "eu-central-1",
+                 "us-gov-west-1",
+                 "cn-north-1",
+                 "us-isob-east-1",
+                 "eusc-de-east-1",
+                 "us-east",
+                 "future_region"
+               )
+    )
       assertEquals(Region.from(value).map(_.value), Right(value))
-    for (value <- List("", "us-east", "US-EAST-1", "not a region", "https://example.com"))
+    for (value <- List("", " ", "not a region", "us-east-1\nother", "us-east-1\u0000"))
       assertEquals(Region.from(value), Left(ValueError.InvalidRegion))
   }
 

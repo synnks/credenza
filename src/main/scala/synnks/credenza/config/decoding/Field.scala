@@ -1,6 +1,7 @@
 package synnks.credenza.config.decoding
 
 import synnks.credenza.config.model.*
+import synnks.credenza.config.model.ConfigNames.SessionName
 
 final private[config] class Field[A] private (
   val id: ConfigField,

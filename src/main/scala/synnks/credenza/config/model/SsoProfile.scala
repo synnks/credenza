@@ -1,6 +1,6 @@
 package synnks.credenza.config.model
 
-final case class SsoSession(name: SessionName, startUrl: SsoStartUrl, region: Region)
+import ConfigNames.ProfileName
 
 final case class SsoProfile(
   name: ProfileName,
