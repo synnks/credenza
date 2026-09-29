@@ -1,0 +1,11 @@
+{
+  "startUrl": "https://example.awsapps.com/start",
+  "region": "eu-central-1",
+  "accessToken": "synthetic-access-token",
+  "expiresAt": "2030-05-01T12:00:00UTC",
+  "clientId": "synthetic-client-id",
+  "clientSecret": "synthetic-client-secret",
+  "registrationExpiresAt": "2030-06-01T12:00:00+00:00",
+  "refreshToken": "synthetic-refresh-token",
+  "unknownField": "synthetic-unrelated-value"
+}
