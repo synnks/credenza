@@ -46,6 +46,7 @@ class SsoTokenCacheTests extends CatsEffectSuite {
   test("derive the exact CLI filename by SHA-1 of the session name") {
     val directory = Path.of("cache")
     val name      = valid(SessionName.from("abc"))
+    assertEquals(SsoTokenCache.defaultDirectory(Path.of("home")), Path.of("home", ".aws", "sso", "cache"))
     assertEquals(
       SsoTokenCache.pathFor(directory, name).getFileName.toString,
       "a9993e364706816aba3e25717850c26c9cd0d89d.json"
