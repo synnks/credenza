@@ -31,6 +31,7 @@ Selected profiles must use a named SSO session; static credentials, external pro
 ## SSO Cache
 
 [`SsoTokenCache`](src/main/scala/synnks/credenza/config/sso/SsoTokenCache.scala) reads a cache directory supplied by the caller. It selects exactly `<sha1(session name)>.json`; it does not scan files or substitute a token from another session sharing the same start URL.
+The disk read is deferred in Cats Effect `IO` and runs on its blocking pool; UTF-8 and JSON decoding and fingerprinting remain separate from file I/O.
 The token decoder checks the record's start URL and SSO region against the selected session, reads its access token and actual expiry, and retains complete refresh material when present. The read result includes the source path and a content fingerprint for later guarded writes.
 
 An expired record remains readable; asking for a usable access token reports that the login has expired. Automatic refresh and credential resolution are not implemented yet.

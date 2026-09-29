@@ -1,15 +1,17 @@
 package synnks.credenza.config.sso
 
-import cats.data.EitherNec
+import cats.data.{ EitherNec, NonEmptyChain }
+import cats.effect.IO
 import cats.syntax.all.*
 import synnks.credenza.config.model.SsoSession
 import synnks.credenza.config.model.ConfigNames.SessionName
 import SsoCachedToken.Error
 
 import java.nio.ByteBuffer
-import java.nio.charset.CodingErrorAction
+import java.nio.charset.{ CharacterCodingException, CodingErrorAction }
 import java.nio.charset.StandardCharsets
 import java.nio.file.{ Files, NoSuchFileException, Path }
+import java.io.IOException
 import java.security.MessageDigest
 
 object SsoTokenCache {
@@ -28,27 +30,33 @@ object SsoTokenCache {
     directory.resolve(hex(bytes) + ".json")
   }
 
-  def load(directory: Path, session: SsoSession): EitherNec[Error, Stored] = {
-    val path = pathFor(directory, session.name)
-    Either
-      .catchNonFatal {
-        val bytes    = Files.readAllBytes(path)
-        val text     = StandardCharsets.UTF_8
-          .newDecoder()
-          .onMalformedInput(CodingErrorAction.REPORT)
-          .onUnmappableCharacter(CodingErrorAction.REPORT)
-          .decode(ByteBuffer.wrap(bytes))
-          .toString
-        val snapshot = Snapshot(path, hex(MessageDigest.getInstance("SHA-256").digest(bytes)))
-        (text, snapshot)
+  def load(directory: Path, session: SsoSession): IO[EitherNec[Error, Stored]] =
+    IO.defer {
+      val path = pathFor(directory, session.name)
+      readBytes(path).map(_.flatMap(bytes => decode(bytes, session, path)))
+    }
+
+  private def readBytes(path: Path): IO[EitherNec[Error, Array[Byte]]] =
+    IO.blocking(Files.readAllBytes(path))
+      .map(_.asRight[NonEmptyChain[Error]])
+      .recover {
+        case _: NoSuchFileException => Left(NonEmptyChain.one(Error.NotFound))
+        case _: IOException         => Left(NonEmptyChain.one(Error.Unreadable))
       }
-      .leftMap {
-        case _: NoSuchFileException => Error.NotFound
-        case _                      => Error.Unreadable
-      }
-      .toEitherNec
-      .flatMap { (text, snapshot) =>
-        SsoTokenDecoder.decode(text, session).map(Stored(_, snapshot))
-      }
-  }
+
+  private def decode(bytes: Array[Byte], session: SsoSession, path: Path): EitherNec[Error, Stored] =
+    for {
+      text  <- Either
+                 .catchOnly[CharacterCodingException] {
+                   StandardCharsets.UTF_8
+                     .newDecoder()
+                     .onMalformedInput(CodingErrorAction.REPORT)
+                     .onUnmappableCharacter(CodingErrorAction.REPORT)
+                     .decode(ByteBuffer.wrap(bytes))
+                     .toString
+                 }
+                 .leftMap(_ => Error.Unreadable)
+                 .toEitherNec
+      token <- SsoTokenDecoder.decode(text, session)
+    } yield Stored(token, Snapshot(path, hex(MessageDigest.getInstance("SHA-256").digest(bytes))))
 }
