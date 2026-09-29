@@ -24,7 +24,7 @@ class SectionDecoderTests extends FunSuite {
 
   test("section decoders compose over immutable input and accumulate errors without the SDK") {
     val decoder = (required(Field.accountId), optional(Field.region)).tupled
-    val input   = Input(section, Map("sso_account_id" -> "123", "region" -> "invalid"))
+    val input   = Input(section, Map("sso_account_id" -> "123", "region" -> "bad region"))
 
     val result = decoder.run(input).toEither.left.map(_.toNonEmptyList.toList.toSet)
     assertEquals(

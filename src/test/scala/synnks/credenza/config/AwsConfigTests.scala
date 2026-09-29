@@ -158,7 +158,7 @@ class AwsConfigTests extends FunSuite {
 
   test("accumulate independent errors from the profile and referenced session") {
     val text = config(
-      profile = "sso_session = Work\nsso_account_id = 123\nsso_role_name =\nregion = bad-region",
+      profile = "sso_session = Work\nsso_account_id = 123\nsso_role_name =\nregion = bad region",
       session = "sso_start_url = not-a-url\nsso_region ="
     )
     assertEquals(
