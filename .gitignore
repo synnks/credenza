@@ -27,5 +27,16 @@ metals.sbt
 ### VS Code ###
 .vscode/
 
+### Coding Agents ###
+# Shared configuration lives in AGENTS.md and .agents/.
+.claude/
+.cursor/
+.opencode/
+opencode.json
+opencode.jsonc
+CLAUDE.md
+.cursorrules
+AGENTS.local.md
+
 ### Mac OS ###
 .DS_Store
