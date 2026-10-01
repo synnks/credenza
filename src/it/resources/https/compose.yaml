@@ -1,0 +1,59 @@
+x-image: &image wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3
+
+x-server: &server
+  image: *image
+  labels:
+    credenza.fixture: https
+  depends_on:
+    certificates:
+      condition: service_completed_successfully
+  volumes:
+    - certificates:/certificates:ro
+  healthcheck:
+    test: [CMD, curl, --fail, --silent, http://localhost:8080/__admin/mappings]
+    interval: 1s
+    timeout: 2s
+    retries: 30
+
+services:
+  certificates:
+    image: *image
+    labels:
+      credenza.fixture: https
+    working_dir: /certificates
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        umask 077
+        openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+          -subj "/CN=Credenza synthetic CA" -addext "basicConstraints=critical,CA:TRUE" \
+          -keyout ca.key -out ca.pem
+        for name in valid wrong; do
+          san="IP:127.0.0.1"
+          if [ "$$name" = wrong ]; then san="DNS:wrong.example.invalid"; fi
+          openssl req -new -newkey rsa:2048 -nodes -subj "/CN=Credenza synthetic server" \
+            -keyout "$$name.key" -out "$$name.csr"
+          printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\nbasicConstraints=critical,CA:FALSE\n' "$$san" > extensions
+          openssl x509 -req -days 2 -in "$$name.csr" -CA ca.pem -CAkey ca.key -CAcreateserial \
+            -extfile extensions -out "$$name.pem"
+          openssl pkcs12 -export -name wiremock -inkey "$$name.key" -in "$$name.pem" \
+            -certfile ca.pem -out "$$name.p12" -passout pass:password
+        done
+    volumes:
+      - certificates:/certificates
+
+  wiremock:
+    <<: *server
+    command: [--https-port, "8443", --https-keystore, /certificates/valid.p12, --keystore-type, PKCS12, --disable-http2-tls, --disable-request-logging, --disable-banner]
+    ports:
+      - "127.0.0.1::8080"
+      - "127.0.0.1::8443"
+
+  wrong-host:
+    <<: *server
+    command: [--https-port, "8443", --https-keystore, /certificates/wrong.p12, --keystore-type, PKCS12, --disable-http2-tls, --disable-request-logging, --disable-banner]
+    ports:
+      - "127.0.0.1::8443"
+
+volumes:
+  certificates:

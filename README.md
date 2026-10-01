@@ -67,4 +67,6 @@ sbt compile
 sbt test
 ```
 
+See [src/it/README.md](src/it/README.md) for integration test setup and commands.
+
 Agent development instructions are in [`AGENTS.md`](AGENTS.md).

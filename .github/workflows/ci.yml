@@ -34,3 +34,6 @@ jobs:
 
       - name: Check and test
         run: sbt --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile; testFull"
+
+      - name: Integration tests
+        run: sbt --batch integrationTest

@@ -17,13 +17,22 @@ root / libraryDependencies ++= Seq(
   "org.http4s"        %% "http4s-ember-server" % Http4sVersion          % Test,
   "io.github.cquiroz" %% "scala-java-time"     % ScalaJavaTimeVersion,
   "com.github.lolgab" %% "scala-native-crypto" % NativeCryptoVersion,
-  "org.scalameta"     %% "munit"               % MUnitVersion           % Test,
-  "org.typelevel"     %% "munit-cats-effect"   % MUnitCatsEffectVersion % Test
+  "org.scalameta"     %% "munit"               % MUnitVersion           % "test,it",
+  "org.typelevel"     %% "munit-cats-effect"   % MUnitCatsEffectVersion % "test,it"
 )
 
 lazy val root = rootProject
-  .enablePlugins(ScalaNativePlugin)
+  .enablePlugins(ScalaNativePlugin, NativeIntegrationTestsPlugin)
   .settings(
     name := "credenza",
-    Test / nativeConfig ~= (_.withEmbedResources(true))
+    Test / nativeConfig ~= (_.withEmbedResources(true)),
+    It / nativeConfig ~= (_.withEmbedResources(true)),
+    It / extraTestDigests ++= Def.uncached {
+      (It / resources).value.sortBy(_.getPath).flatMap { file =>
+        Seq(
+          sbt.util.Digest.sha256Hash(file.getPath.getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+          sbt.util.Digest.sha256Hash(IO.readBytes(file))
+        )
+      }
+    }
   )

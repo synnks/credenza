@@ -2,6 +2,7 @@
 
 [`README.md`](README.md) describes the project and its architecture.
 Read the relevant source package and its mirrored tests before making changes.
+For integration work, also read [src/it/README.md](src/it/README.md).
 
 ## Functional Design
 
@@ -41,6 +42,7 @@ sbt --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile; testFull"
 ```
 
 `testFull` runs the complete suite without reusing cached test results.
+For SSO HTTP or Native build changes, run `sbt integrationTest` as well.
 For documentation-only changes, check links and run `git diff --check`.
 Review the diff and report which checks ran.
 
