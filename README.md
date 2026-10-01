@@ -9,7 +9,7 @@ The current implementation resolves named SSO profiles and reads their AWS CLI S
 
 Configuration and cache handling are split across:
 
-- **[Reader](src/main/scala/synnks/credenza/config/reader/):** uses the AWS SDK's profile parser and copies its output into immutable section data.
+- **[Reader](src/main/scala/synnks/credenza/config/reader):** parses AWS-compatible configuration into immutable section data and resolves configuration-file overrides.
 - **[Model](src/main/scala/synnks/credenza/config/model/):** represents profile and session settings with validated opaque types and structured errors.
 - **[Decoding](src/main/scala/synnks/credenza/config/decoding/):** composes typed profile fields with Cats, collecting independent validation errors together.
 - **[SSO](src/main/scala/synnks/credenza/config/sso/):** decodes and reads the selected SSO cache record.
@@ -24,6 +24,7 @@ It supports `[default]`, `[profile NAME]`, and referenced `[sso-session NAME]` s
 Session names are matched exactly, including case; the profile's optional service region is separate from the required SSO region.
 
 Parsing follows the AWS reader's rules: repeated sections are merged, the last duplicate setting wins, setting names are case-sensitive, and indented lines continue the preceding setting.
+`[profile default]` takes precedence over `[default]`; nested properties remain beneath their parent.
 Unrelated profiles and service settings do not participate in SSO resolution.
 
 Selected profiles must use a named SSO session; static credentials, external processes, role chaining, and legacy inline SSO configuration are rejected.
@@ -38,8 +39,12 @@ An expired record remains readable; asking for a usable access token reports tha
 
 ## Host Source
 
-[`SsoSource`](src/main/scala/synnks/credenza/config/sso/SsoSource.scala) uses the AWS SDK to locate the config file, including `AWS_CONFIG_FILE` overrides. It reads the named profile and its exact cache entry, reporting missing, unreadable, invalid, or expired sessions without exposing cached credentials.
-The host entry point reads the home directory through Cats Effect's environment and system-property APIs. File paths and the evaluation time can be supplied explicitly for testing.
+[`SsoSource`](src/main/scala/synnks/credenza/config/sso/SsoSource.scala) locates the config file with `aws.configFile` taking precedence over `AWS_CONFIG_FILE`, expanding a leading `~/` using the selected home.
+The default is `~/.aws/config`; an override does not relocate the SSO cache.
+It reads the named profile and its exact cache entry, reporting missing, unreadable, invalid, or expired sessions without exposing cached credentials.
+The first present override retains precedence: a blank or invalid selected path returns `InvalidLocation` rather than falling back to another source.
+The host entry point reads the home directory through Cats Effect's environment and system-property APIs.
+File paths and the evaluation time can be supplied explicitly for testing.
 
 ## AWS HTTP Compatibility Proof
 

@@ -4,10 +4,10 @@ import cats.data.{ EitherNec, EitherT, NonEmptyChain }
 import cats.effect.{ Clock, IO }
 import cats.effect.std.{ Env, SystemProperties }
 import cats.syntax.all.*
-import software.amazon.awssdk.profiles.ProfileFileLocation
 import synnks.credenza.config.AwsConfig
 import synnks.credenza.config.model.{ AwsConfigError, SsoProfile }
 import synnks.credenza.config.model.ConfigNames.ProfileName
+import synnks.credenza.config.reader.AwsConfigLocation
 
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -72,16 +72,20 @@ object SsoSource {
         case _                           => SystemProperties[IO].get("user.home")
       }
       .map {
-        case Some(home) if home.nonEmpty =>
+        case Some(home) if home.nonEmpty && !home.contains('\u0000') =>
           Either.catchOnly[InvalidPathException](Path.of(home)).leftMap(_ => Error.InvalidLocation)
-        case _                           => Left(Error.InvalidLocation)
+        case _                                                       => Left(Error.InvalidLocation)
       }
       .flatMap {
         case Left(error) => IO.pure(Left(error))
         case Right(home) =>
-          IO.delay(ProfileFileLocation.configurationFilePath())
-            .map(configFile => Right(Locations(configFile, SsoTokenCache.defaultDirectory(home))))
-            .recover { case _: InvalidPathException => Left(Error.InvalidLocation) }
+          (SystemProperties[IO].get("aws.configFile"), Env[IO].get("AWS_CONFIG_FILE")).tupled
+            .map { (property, environment) =>
+              AwsConfigLocation
+                .resolve(home, property, environment)
+                .map(configFile => Locations(configFile, SsoTokenCache.defaultDirectory(home)))
+                .toRight(Error.InvalidLocation)
+            }
       }
 
   private def readConfig(path: Path): IO[EitherNec[Error, String]] =

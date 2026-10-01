@@ -2,12 +2,11 @@ package synnks.credenza.config.decoding
 
 import cats.data.{ Kleisli, Validated }
 import cats.syntax.all.*
+import synnks.credenza.config.decoding.SectionDecoder.*
 import synnks.credenza.config.model.*
 import synnks.credenza.config.model.ConfigNames.{ ProfileName, SessionName }
 
 private[config] object SsoDecoders {
-  import SectionDecoder.*
-
   def profile(name: ProfileName, resolveSession: SessionName => Validation[SsoSession]): Decoder[SsoProfile] = {
     val session = required(Field.sessionName).mapF(_.andThen(resolveSession))
     val decoded = (

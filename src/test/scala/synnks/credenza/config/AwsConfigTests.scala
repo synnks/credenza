@@ -3,6 +3,7 @@ package synnks.credenza.config
 import cats.data.EitherNec
 import munit.FunSuite
 import synnks.credenza.config.model.*
+import synnks.credenza.config.model.AwsConfigError.*
 import synnks.credenza.config.model.ConfigNames.{ ProfileName, SessionName }
 import synnks.credenza.config.model.AwsConfigError.Section as ConfigSection
 
@@ -10,8 +11,6 @@ import scala.io.Source
 import scala.util.Using
 
 class AwsConfigTests extends FunSuite {
-  import AwsConfigError.*
-
   private val fixture = Using.resource(Source.fromResource("aws-config"))(_.mkString)
 
   private def valid[A](value: Either[ValueError, A]): A = value.fold(error => fail(error.expected), identity)

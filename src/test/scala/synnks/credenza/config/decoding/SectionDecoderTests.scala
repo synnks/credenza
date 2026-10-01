@@ -2,13 +2,12 @@ package synnks.credenza.config.decoding
 
 import cats.syntax.all.*
 import munit.FunSuite
+import synnks.credenza.config.decoding.SectionDecoder.*
 import synnks.credenza.config.model.*
 import synnks.credenza.config.model.ConfigNames.ProfileName
 import synnks.credenza.config.model.AwsConfigError.Section as ConfigSection
 
 class SectionDecoderTests extends FunSuite {
-  import SectionDecoder.*
-
   private val name    = ProfileName.from("staging").fold(error => fail(error.expected), identity)
   private val section = ConfigSection.Profile(name)
 

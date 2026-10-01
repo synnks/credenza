@@ -3,11 +3,10 @@ package synnks.credenza.config.decoding
 import cats.data.{ Kleisli, ValidatedNec }
 import cats.syntax.all.*
 import synnks.credenza.config.model.*
+import synnks.credenza.config.model.AwsConfigError.*
 import AwsConfigError.Section
 
 private[config] object SectionDecoder {
-  import AwsConfigError.*
-
   final case class Input(section: Section, properties: Map[String, String]) {
     override def toString: String = s"Input(${section.label}, <redacted>)"
   }
