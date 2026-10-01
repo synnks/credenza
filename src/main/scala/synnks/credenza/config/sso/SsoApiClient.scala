@@ -1,6 +1,7 @@
 package synnks.credenza.config.sso
 
 import cats.effect.IO
+import fs2.{ Chunk, Stream }
 import io.circe.parser.{ decode, parse }
 import io.circe.syntax.*
 import io.circe.{ Codec, Decoder, Encoder }
@@ -9,15 +10,15 @@ import org.http4s.headers.`Content-Type`
 import org.http4s.{ Header, MediaType, Method, Request, Status, Uri }
 import org.typelevel.ci.CIString
 import synnks.credenza.config.model.SsoProfile
+import synnks.credenza.config.sso.SsoApiClient.*
 import synnks.credenza.config.sso.SsoCachedToken.{ RefreshMaterial, Secret }
 
 import java.io.IOException
 import java.time.Instant
+import java.util.concurrent.TimeoutException
 import scala.concurrent.duration.{ FiniteDuration, SECONDS }
 
 final class SsoApiClient(client: Client[IO], ssoEndpoint: Uri, oidcEndpoint: Uri) {
-
-  import SsoApiClient.*
 
   def getRoleCredentials(profile: SsoProfile, token: Secret): IO[Either[Error, RoleCredentials]] = {
     val uri     = ssoEndpoint
@@ -53,15 +54,24 @@ final class SsoApiClient(client: Client[IO], ssoEndpoint: Uri, oidcEndpoint: Uri
     client
       .run(request)
       .use { response =>
-        response.as[String].map { body =>
-          if (response.status.isSuccess) decode(body)
-          else Left(classify(response.status, body, service))
+        response.body.take(MaxResponseBytes.toLong + 1).compile.to(Chunk).flatMap { bytes =>
+          if (bytes.size > MaxResponseBytes) IO.pure(Left(Error.InvalidResponse))
+          else
+            response.withBodyStream(Stream.chunk(bytes)).as[String].map { body =>
+              if (response.status.isSuccess) decode(body)
+              else Left(classify(response.status, body, service))
+            }
         }
       }
-      .recover { case _: IOException => Left(Error.TransportUnavailable) }
+      .recover {
+        case _: TimeoutException => Left(Error.TimedOut)
+        case _: IOException      => Left(Error.TransportUnavailable)
+      }
 }
 
 object SsoApiClient {
+  private[sso] val MaxResponseBytes = 1024 * 1024
+
   private enum Service {
     case Portal, Oidc
   }
@@ -100,6 +110,7 @@ object SsoApiClient {
     case Throttled
     case InvalidResponse
     case RemoteFailure(status: Status)
+    case TimedOut
     case TransportUnavailable
 
     def message: String = this match {
@@ -108,6 +119,7 @@ object SsoApiClient {
       case Throttled             => "The SSO service is throttling requests."
       case InvalidResponse       => "The SSO service returned an invalid response."
       case RemoteFailure(status) => s"The SSO service returned HTTP ${status.code}."
+      case TimedOut              => "The SSO request timed out."
       case TransportUnavailable  => "Could not reach the SSO service."
     }
   }
