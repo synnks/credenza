@@ -52,6 +52,9 @@ File paths and the evaluation time can be supplied explicitly for testing.
 ## SSO HTTP Client
 
 [`SsoApiClient`](src/main/scala/synnks/credenza/config/sso/SsoApiClient.scala) makes the token-authenticated `GetRoleCredentials` and refresh-token `CreateToken` requests through http4s, using explicit endpoint URIs and typed Circe codecs.
+Transport timeouts return `TimedOut`; cancellation remains cancellation.
+Success and error response bodies are limited to **1 MiB** before decoding, with oversized bodies returning `InvalidResponse` and releasing the response resource.
+Timeout durations are configured on the supplied HTTP client.
 
 ## Building and Testing
 

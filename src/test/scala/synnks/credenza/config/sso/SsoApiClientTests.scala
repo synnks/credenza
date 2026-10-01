@@ -1,7 +1,8 @@
 package synnks.credenza.config.sso
 
 import cats.data.Kleisli
-import cats.effect.{ IO, Ref }
+import cats.effect.{ Deferred, IO, Ref, Resource }
+import fs2.Stream
 import munit.CatsEffectSuite
 import org.http4s.{ Headers, HttpApp, Method, Request, Response, Status, Uri }
 import org.http4s.client.Client
@@ -11,15 +12,15 @@ import org.typelevel.ci.CIString
 import com.comcast.ip4s.*
 import synnks.credenza.config.model.*
 import synnks.credenza.config.model.ConfigNames.{ ProfileName, SessionName }
+import synnks.credenza.config.sso.SsoApiClient.*
 import SsoCachedToken.{ RefreshMaterial, Secret }
 
 import java.time.Instant
 import java.io.IOException
+import java.util.concurrent.TimeoutException
 import scala.concurrent.duration.*
 
 class SsoApiClientTests extends CatsEffectSuite {
-  import SsoApiClient.*
-
   private def valid[A](result: Either[ValueError, A]): A = result.fold(e => fail(e.expected), identity)
   private def secret(value: String): Secret              = Secret.from(value).getOrElse(fail("Expected nonempty test secret"))
 
@@ -182,6 +183,83 @@ class SsoApiClientTests extends CatsEffectSuite {
     client.refresh(material).map { result =>
       assertEquals(result, Left(Error.TransportUnavailable))
       assert(!result.toString.contains("synthetic-secret-value"))
+    }
+  }
+
+  test("classify timeouts during acquisition and body reads, releasing the response and redacting exception text") {
+    val base    = Uri.unsafeFromString("http://local.test")
+    val timeout = new TimeoutException("synthetic-secret-value")
+    val acquire = new SsoApiClient(Client[IO](_ => Resource.eval(IO.raiseError(timeout))), base, base)
+    for {
+      released <- Ref.of[IO, Boolean](false)
+      http      = Client[IO](_ =>
+                    Resource.make(
+                      IO.pure(Response[IO]().withBodyStream(Stream.raiseError[IO](timeout)))
+                    )(_ => released.set(true))
+                  )
+      before   <- acquire.refresh(material)
+      during   <- new SsoApiClient(http, base, base).refresh(material)
+      closed   <- released.get
+    } yield {
+      List(before, during).foreach { result =>
+        assertEquals(result, Left(Error.TimedOut))
+        assert(!result.toString.contains("synthetic-secret-value"))
+        assert(!result.swap.toOption.get.message.contains("synthetic-secret-value"))
+      }
+      assert(closed)
+    }
+  }
+
+  test("cancellation while reading a response stays canceled and releases the response") {
+    val base = Uri.unsafeFromString("http://local.test")
+    for {
+      started  <- Deferred[IO, Unit]
+      released <- Ref.of[IO, Boolean](false)
+      body      = Stream.eval(started.complete(())).drain ++ Stream.never[IO]
+      http      = Client[IO](_ => Resource.make(IO.pure(Response[IO]().withBodyStream(body)))(_ => released.set(true)))
+      fiber    <- new SsoApiClient(http, base, base).refresh(material).start
+      _        <- started.get
+      _        <- fiber.cancel
+      outcome  <- fiber.join
+      closed   <- released.get
+    } yield {
+      assert(outcome.isCanceled)
+      assert(closed)
+    }
+  }
+
+  test("accept a valid JSON response exactly at the byte limit") {
+    val json = """{"accessToken":"synthetic-new-token","expiresIn":10}"""
+    stub(Status.Ok, json + " " * (MaxResponseBytes - json.length)).refresh(material).map { result =>
+      assertEquals(result.toOption.map(_.accessToken.value), Some("synthetic-new-token"))
+    }
+  }
+
+  test("measure the response limit in bytes rather than decoded characters") {
+    val json = s"""{"accessToken":"synthetic-${"é" * (MaxResponseBytes / 2)}","expiresIn":10}"""
+    stub(Status.Ok, json).refresh(material).map(result => assertEquals(result, Left(Error.InvalidResponse)))
+  }
+
+  List(Status.Ok, Status.BadRequest).foreach { status =>
+    test(s"bound HTTP ${status.code} bodies without Content-Length, stop reading, and release the response") {
+      val base = Uri.unsafeFromString("http://local.test")
+      val json = """{"accessToken":"synthetic-new-token","expiresIn":10,"error":"invalid_grant"}"""
+      for {
+        tailRead <- Ref.of[IO, Boolean](false)
+        released <- Ref.of[IO, Boolean](false)
+        body      = Stream.emits(json.getBytes(java.nio.charset.StandardCharsets.UTF_8)).covary[IO] ++
+                      Stream.constant(' '.toByte).take(MaxResponseBytes + 1L - json.length) ++
+                      Stream.eval(tailRead.set(true)).drain
+        http      =
+          Client[IO](_ => Resource.make(IO.pure(Response[IO](status).withBodyStream(body)))(_ => released.set(true)))
+        result   <- new SsoApiClient(http, base, base).refresh(material)
+        readTail <- tailRead.get
+        closed   <- released.get
+      } yield {
+        assertEquals(result, Left(Error.InvalidResponse))
+        assert(!readTail)
+        assert(closed)
+      }
     }
   }
 }
