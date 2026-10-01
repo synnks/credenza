@@ -14,9 +14,9 @@ root / libraryDependencies ++= Seq(
   "org.typelevel"     %% "cats-effect"         % CatsEffectVersion,
   "io.circe"          %% "circe-parser"        % CirceVersion,
   "org.http4s"        %% "http4s-ember-client" % Http4sVersion,
-  "org.http4s"        %% "http4s-ember-server" % Http4sVersion          % Test,
   "io.github.cquiroz" %% "scala-java-time"     % ScalaJavaTimeVersion,
   "com.github.lolgab" %% "scala-native-crypto" % NativeCryptoVersion,
+  "org.http4s"        %% "http4s-ember-server" % Http4sVersion          % "test,it",
   "org.scalameta"     %% "munit"               % MUnitVersion           % "test,it",
   "org.typelevel"     %% "munit-cats-effect"   % MUnitCatsEffectVersion % "test,it"
 )
