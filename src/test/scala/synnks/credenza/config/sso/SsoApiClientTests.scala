@@ -53,7 +53,7 @@ class SsoApiClientTests extends CatsEffectSuite {
     } yield (server, client)
 
     resource.use { (server, client) =>
-      use(Uri.unsafeFromString(s"http://127.0.0.1:${server.address.getPort}"), client)
+      use(server.baseUri, client)
     }
   }
 

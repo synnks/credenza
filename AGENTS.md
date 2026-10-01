@@ -10,19 +10,24 @@ Read the relevant source package and its mirrored tests before making changes.
 - Bind configuration keys to their value types through `Field[A]`, and construct domain values through their validated constructors.
 - Compose independent validation with Cats; use sequential validation when a lookup depends on a decoded value.
 - Keep provider-support policy in the SSO decoders, separate from configuration-key metadata.
-- Use synthetic configuration fixtures. Keep credential values and raw configuration text out of errors, logs, and diagnostic representations.
+- Use synthetic configuration fixtures.
+  Keep credential values and raw configuration text out of errors, logs, and diagnostic representations.
 
 ## Build and Code Style
 
-- Keep the build as a single sbt project. Add dependencies and abstractions when the current work needs them.
-- Put project settings in `build.sbt` and sbt plugins in `project/plugins.sbt`.
+- Keep Credenza Native-only.
+- Put application settings and dependencies in `build.sbt` and sbt plugins in `project/plugins.sbt`.
+- Keep integration configuration declarative; MUnit resources own fixture lifetimes.
+  Discovery must not acquire fixtures or change standard sbt test-selection behavior.
 - Use Scalafmt for both source and build files; follow the surrounding code for conventions the formatter does not cover.
 - Update the README as working features are added.
+- Preserve unaffected documentation wording and use semantic line breaks rather than fixed-width wrapping.
 
 ## Testing and Validation
 
 Use an sbt runner and a JDK; the build has been verified with JDK 25.
 Scala and sbt versions are pinned in `build.sbt` and `project/build.properties`.
+Use the existing toolchain or report missing tools for the user to install.
 
 Start with the smallest affected test suite during development.
 - Compile with `sbt compile`.

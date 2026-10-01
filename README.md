@@ -10,9 +10,9 @@ The current implementation resolves named SSO profiles and reads their AWS CLI S
 Configuration and cache handling are split across:
 
 - **[Reader](src/main/scala/synnks/credenza/config/reader):** parses AWS-compatible configuration into immutable section data and resolves configuration-file overrides.
-- **[Model](src/main/scala/synnks/credenza/config/model/):** represents profile and session settings with validated opaque types and structured errors.
-- **[Decoding](src/main/scala/synnks/credenza/config/decoding/):** composes typed profile fields with Cats, collecting independent validation errors together.
-- **[SSO](src/main/scala/synnks/credenza/config/sso/):** decodes and reads the selected SSO cache record.
+- **[Model](src/main/scala/synnks/credenza/config/model):** represents profile and session settings with validated opaque types and structured errors.
+- **[Decoding](src/main/scala/synnks/credenza/config/decoding):** composes typed profile fields with Cats, collecting independent validation errors together.
+- **[SSO](src/main/scala/synnks/credenza/config/sso):** decodes and reads the selected SSO cache record.
 
 [`AwsConfig`](src/main/scala/synnks/credenza/config/AwsConfig.scala) connects these parts: it selects a profile, resolves its session reference, and runs the decoders.
 The decoders operate on immutable data and receive session resolution as a function.
@@ -31,11 +31,14 @@ Selected profiles must use a named SSO session; static credentials, external pro
 
 ## SSO Cache
 
-[`SsoTokenCache`](src/main/scala/synnks/credenza/config/sso/SsoTokenCache.scala) reads a cache directory supplied by the caller. It selects exactly `<sha1(session name)>.json`; it does not scan files or substitute a token from another session sharing the same start URL.
+[`SsoTokenCache`](src/main/scala/synnks/credenza/config/sso/SsoTokenCache.scala) reads a cache directory supplied by the caller.
+It selects exactly `<sha1(session name)>.json`; it does not scan files or substitute a token from another session sharing the same start URL.
 The disk read is deferred in Cats Effect `IO` and runs on its blocking pool; UTF-8 and JSON decoding and fingerprinting remain separate from file I/O.
-The token decoder checks the record's start URL and SSO region against the selected session, reads its access token and actual expiry, and retains complete refresh material when present. The read result includes the source path and a content fingerprint for later guarded writes.
+The token decoder checks the record's start URL and SSO region against the selected session, reads its access token and actual expiry, and retains complete refresh material when present.
+The read result includes the source path and a content fingerprint for later guarded writes.
 
-An expired record remains readable; asking for a usable access token reports that the login has expired. Automatic refresh and credential resolution are not implemented yet.
+An expired record remains readable; asking for a usable access token reports that the login has expired.
+Automatic refresh and credential resolution are not implemented yet.
 
 ## Host Source
 
@@ -46,10 +49,19 @@ The first present override retains precedence: a blank or invalid selected path 
 The host entry point reads the home directory through Cats Effect's environment and system-property APIs.
 File paths and the evaluation time can be supplied explicitly for testing.
 
-## AWS HTTP Compatibility Proof
+## SSO HTTP Client
 
-[`SsoApiClient`](src/main/scala/synnks/credenza/config/sso/SsoApiClient.scala) makes the token-authenticated `GetRoleCredentials` and refresh-token `CreateToken` requests through http4s 0.23.38, using explicit endpoint URIs and typed Circe codecs. Loopback Ember tests verify their HTTP methods, paths, headers, JSON, expiry units, and redacted errors without SigV4 or requiring ambient IAM credentials.
+[`SsoApiClient`](src/main/scala/synnks/credenza/config/sso/SsoApiClient.scala) makes the token-authenticated `GetRoleCredentials` and refresh-token `CreateToken` requests through http4s, using explicit endpoint URIs and typed Circe codecs.
 
-Source inspection of [smithy4s v0.19.13](https://github.com/disneystreaming/smithy4s/blob/v0.19.13/modules/aws-http4s/src/smithy4s/aws/AwsClient.scala) found that its standard `AwsClient` installs credential-dependent signing for these operations, so this proof uses a small dedicated adapter. These JVM stub tests do not establish live AWS, HTTPS trust, or GraalVM Native Image compatibility.
+## Building and Testing
+
+Credenza targets Scala Native.
+Building requires sbt, a JDK, Clang/Clang++, OpenSSL, and s2n.
+Versions are pinned in [build.sbt](build.sbt), [project/plugins.sbt](project/plugins.sbt), and [project/build.properties](project/build.properties).
+
+```sh
+sbt compile
+sbt test
+```
 
 Agent development instructions are in [`AGENTS.md`](AGENTS.md).

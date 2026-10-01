@@ -11,7 +11,8 @@ import scala.io.Source
 import scala.util.Using
 
 class AwsConfigTests extends FunSuite {
-  private val fixture = Using.resource(Source.fromResource("aws-config"))(_.mkString)
+  private val fixture =
+    Using.resource(Source.fromInputStream(getClass.getResourceAsStream("/aws-config"), "UTF-8"))(_.mkString)
 
   private def valid[A](value: Either[ValueError, A]): A = value.fold(error => fail(error.expected), identity)
 

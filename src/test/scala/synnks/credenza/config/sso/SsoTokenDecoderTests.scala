@@ -20,7 +20,8 @@ class SsoTokenDecoderTests extends FunSuite {
     valid(SsoStartUrl.from("https://example.awsapps.com/start")),
     valid(Region.from("eu-central-1"))
   )
-  private val fixture       = Using.resource(Source.fromResource("sso-token.json"))(_.mkString)
+  private val fixture       =
+    Using.resource(Source.fromInputStream(getClass.getResourceAsStream("/sso-token.json"), "UTF-8"))(_.mkString)
   private val fixtureFields =
     parse(fixture).fold(_ => fail("Invalid test fixture"), _.asObject.getOrElse(fail("Expected JSON object")))
 

@@ -19,8 +19,10 @@ class SsoSourceTests extends CatsEffectSuite {
   private val name        = valid(ProfileName.from("staging"))
   private val sessionName = valid(SessionName.from("Work"))
   private val now         = Instant.parse("2029-01-01T00:00:00Z")
-  private val config      = Using.resource(Source.fromResource("aws-config"))(_.mkString)
-  private val token       = Using.resource(Source.fromResource("sso-token.json"))(_.mkString)
+  private val config      =
+    Using.resource(Source.fromInputStream(getClass.getResourceAsStream("/aws-config"), "UTF-8"))(_.mkString)
+  private val token       =
+    Using.resource(Source.fromInputStream(getClass.getResourceAsStream("/sso-token.json"), "UTF-8"))(_.mkString)
 
   private def withHome[A](use: Path => IO[A]): IO[A] =
     Resource

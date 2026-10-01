@@ -10,7 +10,8 @@ import synnks.credenza.config.model.ConfigNames.ProfileName
 import synnks.credenza.config.reader.AwsConfigLocation
 
 import java.io.IOException
-import java.nio.charset.StandardCharsets
+import java.nio.ByteBuffer
+import java.nio.charset.{ CodingErrorAction, StandardCharsets }
 import java.nio.file.{ Files, InvalidPathException, NoSuchFileException, Path }
 import java.time.Instant
 
@@ -89,8 +90,14 @@ object SsoSource {
       }
 
   private def readConfig(path: Path): IO[EitherNec[Error, String]] =
-    IO.blocking(Files.readString(path, StandardCharsets.UTF_8))
-      .map(_.asRight[NonEmptyChain[Error]])
+    IO.blocking {
+      StandardCharsets.UTF_8
+        .newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(Files.readAllBytes(path)))
+        .toString
+    }.map(_.asRight[NonEmptyChain[Error]])
       .recover {
         case _: NoSuchFileException => Left(NonEmptyChain.one(Error.ConfigMissing))
         case _: IOException         => Left(NonEmptyChain.one(Error.ConfigUnreadable))

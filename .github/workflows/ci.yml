@@ -11,7 +11,12 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      LLVM_BIN: /usr/lib/llvm-18/bin
+      SCALANATIVE_INCLUDE_DIRS: /home/linuxbrew/.linuxbrew/include:/home/linuxbrew/.linuxbrew/opt/openssl@3/include
+      SCALANATIVE_LIB_DIRS: /home/linuxbrew/.linuxbrew/lib:/home/linuxbrew/.linuxbrew/opt/openssl@3/lib
+      LD_LIBRARY_PATH: /home/linuxbrew/.linuxbrew/lib:/home/linuxbrew/.linuxbrew/opt/openssl@3/lib
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -24,5 +29,8 @@ jobs:
 
       - uses: sbt/setup-sbt@v1.5.11
 
-      - name: Check formatting, compile, and test
+      - name: Install Native libraries
+        run: /home/linuxbrew/.linuxbrew/bin/brew install --force-bottle s2n openssl@3
+
+      - name: Check and test
         run: sbt --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile; testFull"
