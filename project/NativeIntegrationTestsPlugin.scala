@@ -2,12 +2,13 @@ import NativeIntegrationTestsPlugin.autoImport.*
 import org.scalafmt.sbt.ScalafmtPlugin
 import sbt.*
 import sbt.Keys.*
+import sbt.plugins.JUnitXmlReportPlugin
 import scala.scalanative.build.Mode
 import scala.scalanative.sbtplugin.{ ScalaNativePlugin, ScalaNativePluginInternal }
 import scala.scalanative.sbtplugin.ScalaNativePlugin.autoImport.*
 
 object NativeIntegrationTestsPlugin extends AutoPlugin {
-  override def requires: Plugins = ScalaNativePlugin && ScalafmtPlugin
+  override def requires: Plugins = ScalaNativePlugin && ScalafmtPlugin && JUnitXmlReportPlugin
 
   object autoImport {
     val It              = config("it").extend(Runtime)
@@ -17,7 +18,10 @@ object NativeIntegrationTestsPlugin extends AutoPlugin {
   override def projectConfigurations: Seq[Configuration] = Seq(It)
 
   override def projectSettings: Seq[Def.Setting[?]] =
-    inConfig(It)(Defaults.testSettings ++ ScalaNativePluginInternal.scalaNativeTestSettings) ++
+    inConfig(It)(
+      Defaults.testSettings ++ ScalaNativePluginInternal.scalaNativeTestSettings ++
+        JUnitXmlReportPlugin.autoImport.testReportSettings
+    ) ++
       ScalafmtPlugin.scalafmtConfigSettings(It) ++ Seq(
         libraryDependencies += "org.scala-native" %% "test-interface" % nativeVersion % It,
         It / crossTarget                          := (Compile / crossTarget).value / "it",

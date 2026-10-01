@@ -33,7 +33,14 @@ jobs:
         run: /home/linuxbrew/.linuxbrew/bin/brew install --force-bottle s2n openssl@3
 
       - name: Check and test
-        run: sbt --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile; testFull"
+        run: sbt --server --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile; testFull"
 
       - name: Integration tests
-        run: sbt --batch integrationTest
+        run: sbt --server --batch integrationTest
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: test-reports
+          path: target/out/**/*-reports/*.xml

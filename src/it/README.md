@@ -23,6 +23,7 @@ sbt 'It / testOnly *NativeTlsCompatibilityTests'
 `It / test`, `It / testOnly`, and `It / testFull` retain sbt's normal selection and caching semantics.
 The [integration plugin](../../project/NativeIntegrationTestsPlugin.scala) configures Native release mode; [build.sbt](../../build.sbt) embeds fixture resources and includes their contents in test digests.
 Discovery does not start either fixture.
+CI runs sbt in the foreground to retain test output and uploads unit and integration JUnit XML reports as the `test-reports` artifact, including on failure.
 
 ## Independent SSO HTTPS Suite
 
