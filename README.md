@@ -7,6 +7,8 @@ The current implementation resolves named SSO profiles and reads their AWS CLI S
 
 ## Architecture
 
+Credenza uses Scala/JVM, with GraalVM Native Image as the standalone distribution target.
+
 Configuration and cache handling are split across:
 
 - **[Reader](src/main/scala/synnks/credenza/config/reader/):** uses the AWS SDK's profile parser and copies its output into immutable section data.
@@ -34,20 +36,18 @@ Selected profiles must use a named SSO session; static credentials, external pro
 The disk read is deferred in Cats Effect `IO` and runs on its blocking pool; UTF-8 and JSON decoding and fingerprinting remain separate from file I/O.
 The token decoder checks the record's start URL and SSO region against the selected session, reads its access token and actual expiry, and retains complete refresh material when present. The read result includes the source path and a content fingerprint for later guarded writes.
 
-An expired record remains readable; asking for a usable access token reports that the login has expired. Automatic refresh and credential resolution are not implemented yet.
+An expired record remains readable; asking for a usable access token reports that the login has expired.
 
 ## Host Source
 
 [`SsoSource`](src/main/scala/synnks/credenza/config/sso/SsoSource.scala) uses the AWS SDK to locate the config file, including `AWS_CONFIG_FILE` overrides. It reads the named profile and its exact cache entry, reporting missing, unreadable, invalid, or expired sessions without exposing cached credentials.
 The host entry point reads the home directory through Cats Effect's environment and system-property APIs. File paths and the evaluation time can be supplied explicitly for testing.
 
-## AWS HTTP Compatibility Proof
+## SSO HTTP Client
 
 [`SsoApiClient`](src/main/scala/synnks/credenza/config/sso/SsoApiClient.scala) makes the token-authenticated `GetRoleCredentials` and refresh-token `CreateToken` requests through http4s, using explicit endpoint URIs and typed Circe codecs.
 Transport timeouts return `TimedOut`; cancellation remains cancellation.
 Success and error response bodies are limited to **1 MiB** before decoding, with oversized bodies returning `InvalidResponse` and releasing the response resource.
 Timeout durations are configured on the supplied HTTP client.
-
-Source inspection of [smithy4s v0.19.13](https://github.com/disneystreaming/smithy4s/blob/v0.19.13/modules/aws-http4s/src/smithy4s/aws/AwsClient.scala) found that its standard `AwsClient` installs credential-dependent signing for these operations, so this proof uses a small dedicated adapter. These JVM stub tests do not establish live AWS, HTTPS trust, or GraalVM Native Image compatibility.
 
 Agent development instructions are in [`AGENTS.md`](AGENTS.md).

@@ -11,7 +11,8 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -25,4 +26,7 @@ jobs:
       - uses: sbt/setup-sbt@v1.5.11
 
       - name: Check formatting, compile, and test
-        run: sbt --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile; testFull"
+        run: sbt --server --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile; testFull"
+
+      - name: JVM integration tests
+        run: sbt --server --batch integrationTest
