@@ -4,10 +4,10 @@ import cats.effect.{ IO, Outcome, Resource }
 import cats.syntax.all.*
 import com.github.tomakehurst.wiremock.client.WireMock
 import com.github.tomakehurst.wiremock.client.WireMock.*
-import com.github.tomakehurst.wiremock.client.MappingBuilder
+import com.github.tomakehurst.wiremock.client.{ MappingBuilder, ResponseDefinitionBuilder }
 import com.github.tomakehurst.wiremock.matching.RequestPatternBuilder
 import io.circe.Json
-import munit.{ AnyFixture, Assertions, CatsEffectSuite }
+import munit.{ AnyFixture, Assertions, CatsEffectSuite, Location }
 import sttp.model.Uri
 import synnks.credenza.config.model.*
 import synnks.credenza.config.model.ConfigNames.{ ProfileName, SessionName }
@@ -28,7 +28,8 @@ class SsoApiClientIntegrationTests extends CatsEffectSuite {
 
   override def munitFixtures: Seq[AnyFixture[?]] = List(connection)
 
-  private def integration(name: String)(body: => IO[Unit]): Unit = test(name)(body.timeout(scenarioTimeout))
+  private def integration(name: String)(body: => IO[Unit])(using Location): Unit =
+    test(name)(body.timeout(scenarioTimeout))
 
   integration("GetRoleCredentials sends the exact unsigned request over verified HTTPS") {
     withClient("role") { (base, api) =>
@@ -80,28 +81,17 @@ class SsoApiClientIntegrationTests extends CatsEffectSuite {
     }
   }
 
-  List(
-    ("oauth-error", "an OAuth error body", jsonResponse(errorResponse.noSpaces, 400)),
-    (
-      "aws-exception",
-      "AWS exception metadata",
-      jsonResponse(errorResponse.noSpaces, 400).withHeader("x-amzn-ErrorType", "InvalidGrantException")
-    )
-  ).foreach { (scenario, source, response) =>
-    integration(s"HTTPS decodes and redacts a service error from $source") {
-      withClient(scenario) { (base, api) =>
-        for {
-          _      <- stub(post(urlPathEqualTo(base.addPath("token").pathToString)).willReturn(response))
-          result <- api.refresh(material)
-        } yield {
-          val error = result.swap.getOrElse(fail("Expected an invalid refresh grant"))
-          assertEquals(error, Error.InvalidGrant)
-          assert(!result.toString.contains("synthetic-secret"))
-          assert(!error.message.contains("synthetic-secret"))
-        }
-      }
-    }
-  }
+  checkServiceError(
+    scenario = "oauth-error",
+    source = "an OAuth error body",
+    response = jsonResponse(errorResponse.noSpaces, 400)
+  )
+
+  checkServiceError(
+    scenario = "aws-exception",
+    source = "AWS exception metadata",
+    response = jsonResponse(errorResponse.noSpaces, 400).withHeader("x-amzn-ErrorType", "InvalidGrantException")
+  )
 
   integration("HTTPS reports malformed successful response JSON as an invalid response") {
     withClient("malformed") { (base, api) =>
@@ -125,26 +115,8 @@ class SsoApiClientIntegrationTests extends CatsEffectSuite {
     }
   }
 
-  List(("successful", 200, tokenResponse), ("service-error", 400, errorResponse)).foreach { (kind, status, body) =>
-    integration(s"HTTPS rejects an oversized $kind response and permits a subsequent request") {
-      withClient(s"oversized-$kind") { (base, api) =>
-        val path = urlPathEqualTo(base.addPath("token").pathToString)
-        for {
-          _      <- stub(
-                      post(path)
-                        .atPriority(2)
-                        .willReturn(jsonResponse(body.noSpaces + " " * SsoApiClient.MaxResponseBytes, status))
-                    )
-          result <- api.refresh(material)
-          _      <- stub(post(path).atPriority(1).willReturn(okJson(tokenResponse.noSpaces)))
-          next   <- api.refresh(material).timeout(connectionRecoveryTimeout)
-        } yield {
-          assertEquals(result, Left(Error.InvalidResponse))
-          assertEquals(success(next).accessToken.value, "synthetic-new-token")
-        }
-      }
-    }
-  }
+  checkOversizedResponse(kind = "successful", status = 200, body = tokenResponse)
+  checkOversizedResponse(kind = "service-error", status = 400, body = errorResponse)
 
   integration("HTTPS rejects an untrusted CA and redacts the TLS failure") {
     rejected(Trust.System, connection().baseUri)
@@ -172,6 +144,45 @@ class SsoApiClientIntegrationTests extends CatsEffectSuite {
   integration("HTTPS rejects a trusted certificate for the wrong hostname") {
     rejected(Trust.TestCa, connection().wrongHostUri)
   }
+
+  private def checkServiceError(
+    scenario: String,
+    source: String,
+    response: => ResponseDefinitionBuilder
+  )(using Location): Unit =
+    integration(s"HTTPS decodes and redacts a service error from $source") {
+      withClient(scenario) { (base, api) =>
+        for {
+          _      <- stub(post(urlPathEqualTo(base.addPath("token").pathToString)).willReturn(response))
+          result <- api.refresh(material)
+        } yield {
+          val error = result.swap.getOrElse(fail("Expected an invalid refresh grant"))
+          assertEquals(error, Error.InvalidGrant)
+          assert(!result.toString.contains("synthetic-secret"))
+          assert(!error.message.contains("synthetic-secret"))
+        }
+      }
+    }
+
+  private def checkOversizedResponse(kind: String, status: Int, body: Json)(using Location): Unit =
+    integration(s"HTTPS rejects an oversized $kind response and permits a subsequent request") {
+      withClient(s"oversized-$kind") { (base, api) =>
+        val path = urlPathEqualTo(base.addPath("token").pathToString)
+        for {
+          _      <- stub(
+                      post(path)
+                        .atPriority(2)
+                        .willReturn(jsonResponse(body.noSpaces + " " * SsoApiClient.MaxResponseBytes, status))
+                    )
+          result <- api.refresh(material)
+          _      <- stub(post(path).atPriority(1).willReturn(okJson(tokenResponse.noSpaces)))
+          next   <- api.refresh(material).timeout(connectionRecoveryTimeout)
+        } yield {
+          assertEquals(result, Left(Error.InvalidResponse))
+          assertEquals(success(next).accessToken.value, "synthetic-new-token")
+        }
+      }
+    }
 
   private def withClient[A](scenario: String)(run: (Uri, SsoApiClient) => IO[A]): IO[A] = {
     val base = connection().baseUri.addPath(scenario)
