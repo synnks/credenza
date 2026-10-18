@@ -45,9 +45,10 @@ The host entry point reads the home directory through Cats Effect's environment 
 
 ## SSO HTTP Client
 
-[`SsoApiClient`](src/main/scala/synnks/credenza/config/sso/SsoApiClient.scala) makes the token-authenticated `GetRoleCredentials` and refresh-token `CreateToken` requests through http4s, using explicit endpoint URIs and typed Circe codecs.
+[`SsoApiClient`](src/main/scala/synnks/credenza/config/sso/SsoApiClient.scala) makes the token-authenticated `GetRoleCredentials` and refresh-token `CreateToken` requests through the AWS SDK for Java 2.x asynchronous clients.
+`SsoApiClient.resource(region, timeout)` owns one shared HTTP transport and both service clients, with SDK regional endpoint resolution.
 Transport timeouts return `TimedOut`; cancellation remains cancellation.
 Success and error response bodies are limited to **1 MiB** before decoding, with oversized bodies returning `InvalidResponse` and releasing the response resource.
-Timeout durations are configured on the supplied HTTP client.
+The API-call timeout is configured when creating the client resource; SDK retries are disabled.
 
 Agent development instructions are in [`AGENTS.md`](AGENTS.md).

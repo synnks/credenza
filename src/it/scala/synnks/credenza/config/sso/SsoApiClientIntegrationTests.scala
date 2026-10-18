@@ -1,23 +1,24 @@
 package synnks.credenza.config.sso
 
-import cats.effect.{ IO, Ref, Resource }
+import cats.effect.{ IO, Outcome, Resource }
 import cats.syntax.all.*
 import com.github.tomakehurst.wiremock.client.WireMock
 import com.github.tomakehurst.wiremock.client.WireMock.*
+import com.github.tomakehurst.wiremock.client.MappingBuilder
+import com.github.tomakehurst.wiremock.matching.RequestPatternBuilder
 import io.circe.Json
 import munit.{ AnyFixture, Assertions, CatsEffectSuite }
-import org.http4s.client.Client
-import org.http4s.ember.client.EmberClientBuilder
-import org.http4s.Uri
+import sttp.model.Uri
 import synnks.credenza.config.model.*
 import synnks.credenza.config.model.ConfigNames.{ ProfileName, SessionName }
 import synnks.credenza.config.sso.SsoApiClient.Error
+import synnks.credenza.config.sso.HttpsTestTls.{ TransportFailure, Trust }
 import synnks.credenza.config.sso.SsoApiClientIntegrationTests.*
 import synnks.credenza.config.sso.SsoCachedToken.{ RefreshMaterial, Secret }
 
 import java.time.Instant
-import javax.net.ssl.SSLException
 import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
 
 class SsoApiClientIntegrationTests extends CatsEffectSuite {
 
@@ -27,41 +28,26 @@ class SsoApiClientIntegrationTests extends CatsEffectSuite {
 
   override def munitFixtures: Seq[AnyFixture[?]] = List(connection)
 
-  private def client(trust: Trust = Trust.TestCa): Resource[IO, Client[IO]] =
-    SsoApiClientIntegrationTests.client(connection(), trust)
-
-  private def integration(name: String)(body: => IO[Unit]): Unit = test(name)(body.timeout(35.seconds))
-
-  private def endpoint(scenario: String): Uri = connection().baseUri.withPath(connection().baseUri.path / scenario)
-
-  private def wireMock: WireMock = new WireMock(connection().adminUri.host.get.value, connection().adminUri.port.get)
+  private def integration(name: String)(body: => IO[Unit]): Unit = test(name)(body.timeout(scenarioTimeout))
 
   integration("GetRoleCredentials sends the exact unsigned request over verified HTTPS") {
-    client().use { http =>
-      val wiremock = wireMock
-      val base     = endpoint("role")
-      val path     = urlPathEqualTo((base.path / "federation" / "credentials").renderString)
+    withClient("role") { (base, api) =>
+      val path = urlPathEqualTo(base.addPath("federation", "credentials").pathToString)
       for {
-        _      <- IO.blocking(wiremock.register(get(path).willReturn(okJson(roleResponse.noSpaces))))
-        result <- new SsoApiClient(http, base, base).getRoleCredentials(profile, secret("synthetic-access-token"))
-        _      <- IO.blocking {
-                    wiremock.verifyThat(
-                      1,
+        _        <- stub(get(path).willReturn(okJson(roleResponse.noSpaces)))
+        result   <- api.getRoleCredentials(profile, secret("synthetic-access-token"))
+        _        <- verifyRequest(
                       getRequestedFor(path)
                         .withHeader("x-amz-sso_bearer_token", equalTo("synthetic-access-token"))
                         .withHeader("Authorization", absent())
                         .withHeader("X-Amz-Date", absent())
+                        .withQueryParam("account_id", equalTo("000011112222"))
+                        .withQueryParam("role_name", equalTo("Admin+ReadOnly"))
                     )
-                    val requests = wiremock.find(getRequestedFor(path))
-                    assertEquals(requests.size(), 1)
-                    assert(Option(requests.get(0).getBodyAsString).forall(_.isEmpty))
-                    assertEquals(
-                      Uri.unsafeFromString(requests.get(0).getUrl).query.params,
-                      Map("account_id" -> "000011112222", "role_name" -> "Admin+ReadOnly")
-                    )
-                  }
+        requests <- recordedRequests(getRequestedFor(path))
       } yield {
-        val credentials = result.toOption.getOrElse(fail(s"Expected role credentials, got ${result.left.toOption}"))
+        val credentials = success(result)
+        assertEquals(requests, List(RecordedRequest(bodyIsEmpty = true, Set("account_id", "role_name"))))
         assertEquals(credentials.accessKeyId.value, "synthetic-key-id")
         assertEquals(credentials.secretAccessKey.value, "synthetic-key")
         assertEquals(credentials.sessionToken.value, "synthetic-session")
@@ -72,25 +58,20 @@ class SsoApiClientIntegrationTests extends CatsEffectSuite {
   }
 
   integration("CreateToken sends the exact unsigned JSON grant over verified HTTPS") {
-    client().use { http =>
-      val wiremock = wireMock
-      val base     = endpoint("refresh")
-      val path     = urlPathEqualTo((base.path / "token").renderString)
+    withClient("refresh") { (base, api) =>
+      val path = urlPathEqualTo(base.addPath("token").pathToString)
       for {
-        _      <- IO.blocking(wiremock.register(post(path).willReturn(okJson(tokenResponse.noSpaces))))
-        result <- new SsoApiClient(http, base, base).refresh(material)
-        _      <- IO.blocking(
-                    wiremock.verifyThat(
-                      1,
-                      postRequestedFor(path)
-                        .withHeader("Content-Type", equalTo("application/json"))
-                        .withHeader("Authorization", absent())
-                        .withHeader("X-Amz-Date", absent())
-                        .withRequestBody(equalToJson(refreshGrant.noSpaces))
-                    )
+        _      <- stub(post(path).willReturn(okJson(tokenResponse.noSpaces)))
+        result <- api.refresh(material)
+        _      <- verifyRequest(
+                    postRequestedFor(path)
+                      .withHeader("Content-Type", equalTo("application/json"))
+                      .withHeader("Authorization", absent())
+                      .withHeader("X-Amz-Date", absent())
+                      .withRequestBody(equalToJson(refreshGrant.noSpaces))
                   )
       } yield {
-        val token = result.toOption.getOrElse(fail(s"Expected refreshed token, got ${result.left.toOption}"))
+        val token = success(result)
         assertEquals(token.accessToken.value, "synthetic-new-token")
         assertEquals(token.expiresIn, 1.hour)
         assertEquals(token.refreshToken.map(_.value), Some("synthetic-new-refresh"))
@@ -99,53 +80,69 @@ class SsoApiClientIntegrationTests extends CatsEffectSuite {
     }
   }
 
-  integration("HTTPS decodes and redacts a service error") {
-    client().use { http =>
-      val base = endpoint("invalid-grant")
-      for {
-        _      <-
-          IO.blocking(
-            wireMock.register(
-              post(urlPathEqualTo((base.path / "token").renderString))
-                .willReturn(jsonResponse(errorResponse.noSpaces, 400))
-            )
-          )
-        result <- new SsoApiClient(http, base, base).refresh(material)
-      } yield {
-        assertEquals(result, Left(Error.InvalidGrant))
-        assert(!result.toString.contains("synthetic-secret"))
-        assert(!result.swap.toOption.get.message.contains("synthetic-secret"))
+  List(
+    ("oauth-error", "an OAuth error body", jsonResponse(errorResponse.noSpaces, 400)),
+    (
+      "aws-exception",
+      "AWS exception metadata",
+      jsonResponse(errorResponse.noSpaces, 400).withHeader("x-amzn-ErrorType", "InvalidGrantException")
+    )
+  ).foreach { (scenario, source, response) =>
+    integration(s"HTTPS decodes and redacts a service error from $source") {
+      withClient(scenario) { (base, api) =>
+        for {
+          _      <- stub(post(urlPathEqualTo(base.addPath("token").pathToString)).willReturn(response))
+          result <- api.refresh(material)
+        } yield {
+          val error = result.swap.getOrElse(fail("Expected an invalid refresh grant"))
+          assertEquals(error, Error.InvalidGrant)
+          assert(!result.toString.contains("synthetic-secret"))
+          assert(!error.message.contains("synthetic-secret"))
+        }
       }
     }
   }
 
-  integration("a delayed HTTPS response returns a typed timeout") {
-    client().use { http =>
-      val base = endpoint("timeout")
-      IO.blocking(
-        wireMock.register(
-          post(urlPathEqualTo((base.path / "token").renderString))
-            .willReturn(okJson(tokenResponse.noSpaces).withFixedDelay(10000))
-        )
-      ) *>
-        new SsoApiClient(http, base, base)
-          .refresh(material)
-          .map(result => assertEquals(result, Left(Error.TimedOut)))
+  integration("HTTPS reports malformed successful response JSON as an invalid response") {
+    withClient("malformed") { (base, api) =>
+      val malformed = tokenResponse.noSpaces.dropRight(1)
+      for {
+        _      <- stub(post(urlPathEqualTo(base.addPath("token").pathToString)).willReturn(okJson(malformed)))
+        result <- api.refresh(material)
+      } yield assertEquals(result, Left(Error.InvalidResponse))
     }
   }
 
-  integration("HTTPS rejects an oversized successful response before decoding") {
-    client().use { http =>
-      val base = endpoint("oversized")
-      IO.blocking(
-        wireMock.register(
-          post(urlPathEqualTo((base.path / "token").renderString))
-            .willReturn(okJson(tokenResponse.noSpaces + " " * SsoApiClient.MaxResponseBytes))
-        )
-      ) *>
-        new SsoApiClient(http, base, base)
-          .refresh(material)
-          .map(result => assertEquals(result, Left(Error.InvalidResponse)))
+  integration("a delayed HTTPS response returns a typed timeout") {
+    withClient("timeout") { (base, api) =>
+      for {
+        _      <- stub(
+                    post(urlPathEqualTo(base.addPath("token").pathToString))
+                      .willReturn(okJson(tokenResponse.noSpaces).withFixedDelay(delayedResponse.toMillis.toInt))
+                  )
+        result <- api.refresh(material)
+      } yield assertEquals(result, Left(Error.TimedOut))
+    }
+  }
+
+  List(("successful", 200, tokenResponse), ("service-error", 400, errorResponse)).foreach { (kind, status, body) =>
+    integration(s"HTTPS rejects an oversized $kind response and permits a subsequent request") {
+      withClient(s"oversized-$kind") { (base, api) =>
+        val path = urlPathEqualTo(base.addPath("token").pathToString)
+        for {
+          _      <- stub(
+                      post(path)
+                        .atPriority(2)
+                        .willReturn(jsonResponse(body.noSpaces + " " * SsoApiClient.MaxResponseBytes, status))
+                    )
+          result <- api.refresh(material)
+          _      <- stub(post(path).atPriority(1).willReturn(okJson(tokenResponse.noSpaces)))
+          next   <- api.refresh(material).timeout(connectionRecoveryTimeout)
+        } yield {
+          assertEquals(result, Left(Error.InvalidResponse))
+          assertEquals(success(next).accessToken.value, "synthetic-new-token")
+        }
+      }
     }
   }
 
@@ -153,31 +150,91 @@ class SsoApiClientIntegrationTests extends CatsEffectSuite {
     rejected(Trust.System, connection().baseUri)
   }
 
+  integration("canceling an SDK request releases the connection for a subsequent request") {
+    withClient("cancellation") { (base, api) =>
+      val path = urlPathEqualTo(base.addPath("token").pathToString)
+      for {
+        _       <- stub(
+                     post(path)
+                       .atPriority(2)
+                       .willReturn(okJson(tokenResponse.noSpaces).withFixedDelay(delayedResponse.toMillis.toInt))
+                   )
+        outcome <- cancelAfterRequest(api.refresh(material), postRequestedFor(path))
+        _       <- stub(post(path).atPriority(1).willReturn(okJson(tokenResponse.noSpaces)))
+        next    <- api.refresh(material).timeout(connectionRecoveryTimeout)
+      } yield {
+        assert(outcome.isCanceled)
+        assertEquals(success(next).accessToken.value, "synthetic-new-token")
+      }
+    }
+  }
+
   integration("HTTPS rejects a trusted certificate for the wrong hostname") {
     rejected(Trust.TestCa, connection().wrongHostUri)
   }
 
-  private def rejected(trust: Trust, base: Uri): IO[Unit] = client(trust).use { http =>
-    for {
-      failure <- Ref.of[IO, Option[Throwable]](None)
-      observed =
-        Client[IO](request => http.run(request).onError { case error => Resource.eval(failure.set(Some(error))) })
-      result  <- new SsoApiClient(observed, base, base).refresh(material)
-      cause   <- failure.get
-    } yield {
-      assertEquals(result, Left(Error.TransportUnavailable))
-      assert(
-        cause.exists(_.isInstanceOf[SSLException]),
-        "Expected a certificate-related SSLException, not a timeout or connection failure"
-      )
-    }
+  private def withClient[A](scenario: String)(run: (Uri, SsoApiClient) => IO[A]): IO[A] = {
+    val base = connection().baseUri.addPath(scenario)
+    HttpsTestTls.client(connection(), profile.session.region, base, apiTimeout).use((api, _) => run(base, api))
   }
+
+  private def wireMock: WireMock = new WireMock(connection().adminHost, connection().adminPort)
+
+  private def stub(mapping: MappingBuilder): IO[Unit] = IO.blocking(wireMock.register(mapping)).void
+
+  private def verifyRequest(request: RequestPatternBuilder): IO[Unit] = IO.blocking(wireMock.verifyThat(1, request))
+
+  private def recordedRequests(request: RequestPatternBuilder): IO[List[RecordedRequest]] = IO.blocking {
+    wireMock
+      .find(request)
+      .asScala
+      .iterator
+      .map { logged =>
+        RecordedRequest(Option(logged.getBodyAsString).forall(_.isEmpty), logged.getQueryParams.keySet().asScala.toSet)
+      }
+      .toList
+  }
+
+  private def awaitRequest(request: RequestPatternBuilder): IO[Unit] =
+    (IO.sleep(requestPollInterval) *> IO.blocking(!wireMock.find(request).isEmpty))
+      .iterateUntil(identity)
+      .void
+      .timeoutTo(observationTimeout, IO(fail("WireMock did not receive the request before cancellation")))
+
+  private def cancelAfterRequest[A](request: IO[A], matcher: RequestPatternBuilder): IO[Outcome[IO, Throwable, A]] =
+    Resource.make(request.start)(_.cancel).use { fiber =>
+      awaitRequest(matcher) *> fiber.cancel *> fiber.join
+    }
+
+  private def rejected(trust: Trust, base: Uri): IO[Unit] =
+    HttpsTestTls.client(connection(), profile.session.region, base, apiTimeout, trust).use { (api, failure) =>
+      for {
+        result <- api.refresh(material)
+        cause  <- failure.timeout(observationTimeout)
+      } yield {
+        val error = result.swap.getOrElse(fail("Expected a TLS failure"))
+        assertEquals(error, Error.TransportUnavailable)
+        assertEquals(error.message, "Could not reach the SSO service.")
+        assertEquals(cause, TransportFailure.Tls)
+      }
+    }
 
 }
 
 private object SsoApiClientIntegrationTests extends Assertions {
+  private val apiTimeout                = 5.seconds
+  private val scenarioTimeout           = 35.seconds
+  private val delayedResponse           = 10.seconds
+  private val observationTimeout        = 3.seconds
+  private val requestPollInterval       = 20.millis
+  private val connectionRecoveryTimeout = 2.seconds
+
   private def valid[A](value: Either[ValueError, A]): A = value.fold(e => fail(e.expected), identity)
   private def secret(value: String): Secret             = Secret.from(value).getOrElse(fail("Expected nonempty test secret"))
+  private def success[A](result: Either[Error, A]): A   =
+    result.fold(error => fail(s"Expected success, got ${error.message}"), identity)
+
+  final private case class RecordedRequest(bodyIsEmpty: Boolean, queryParameters: Set[String])
 
   private val profile  = SsoProfile(
     valid(ProfileName.from("staging")),
@@ -196,23 +253,6 @@ private object SsoApiClientIntegrationTests extends Assertions {
     secret("synthetic-refresh-token"),
     Instant.parse("2030-06-01T00:00:00Z")
   )
-
-  private enum Trust {
-    case TestCa, System
-  }
-
-  private def client(connection: HttpsTestConnection, trust: Trust): Resource[IO, Client[IO]] = trust match {
-    case Trust.TestCa =>
-      for {
-        context <- Resource.eval(HttpsTestCertificates.trustCertificate(connection.caPem))
-        http    <- EmberClientBuilder
-                     .default[IO]
-                     .withTLSContext(context)
-                     .withTimeout(5.seconds)
-                     .build
-      } yield http
-    case Trust.System => EmberClientBuilder.default[IO].withTimeout(5.seconds).build
-  }
 
   private val roleResponse  = Json.obj(
     "roleCredentials" -> Json.obj(

@@ -1,11 +1,12 @@
 package synnks.credenza.config.sso
 
-import org.http4s.Uri
+import sttp.model.Uri
 
 final private[sso] case class HttpsTestConnection(
   baseUri: Uri,
   wrongHostUri: Uri,
-  adminUri: Uri,
+  adminHost: String,
+  adminPort: Int,
   caPem: String
 ) {
   override def toString: String = "HttpsTestConnection(<redacted>)"

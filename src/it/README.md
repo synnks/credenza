@@ -35,9 +35,9 @@ The synthetic certificates cover `localhost` and `127.0.0.1`, so use a local Doc
 
 ## Independent SSO HTTPS Suite
 
-[`SsoApiClientIntegrationTests`](scala/synnks/credenza/config/sso/SsoApiClientIntegrationTests.scala) runs the real Ember client against WireMock.
+[`SsoApiClientIntegrationTests`](scala/synnks/credenza/config/sso/SsoApiClientIntegrationTests.scala) runs the SDK-backed SSO/OIDC clients with the Netty HTTP transport against WireMock.
 It uses WireMock's Java DSL to stub responses and verify request methods, paths, query parameters, unsigned headers, and JSON bodies.
-The seven integration cases cover successful HTTPS responses, service-error redaction, a real transport timeout, response-size limits, and certificate/hostname rejection.
+The integration cases cover successful HTTPS responses, service-error redaction, malformed JSON, transport timeouts, response-size limits, cancellation, and certificate/hostname rejection.
 The unit suite covers the remaining decoding and error-classification combinations.
 
 [`HttpsTestContainers`](scala/synnks/credenza/config/sso/HttpsTestContainers.scala) pins the WireMock image and manages the fixture lifetime through Cats Effect `Resource`:
@@ -53,8 +53,10 @@ Missing Docker or failed fixture startup fails the suite.
 
 The [PEM fixtures](resources/tls) are synthetic.
 [`HttpsTestCertificates`](scala/synnks/credenza/config/sso/HttpsTestCertificates.scala) reads the CA certificate and prebuilt server keystores with FS2, supplying PKCS12 data as immutable byte chunks.
-It uses Scala SSL Config's PEM keystore and SSL context builders for CA trust.
+Fixture endpoints use Scala URI values, converted to Java URIs at the SDK boundary.
 [`HttpsTestConnection`](scala/synnks/credenza/config/sso/HttpsTestConnection.scala) holds the immutable connection data.
+[`HttpsTestTls`](scala/synnks/credenza/config/sso/HttpsTestTls.scala) uses Scala SSL Config's PEM keystore builder for CA trust and adapts its result to the SDK's JDK trust managers.
+It supplies a resource-managed SSO client and typed transport-failure observation to the suite.
 `valid.pem` covers `127.0.0.1` and `localhost`; `wrong-host.pem` covers `wrong.example.invalid`.
 The server private key is intentionally public test data; the CA signing key is not committed.
 Regenerate the certificates and key as a set before expiry, then rerun the suite.
