@@ -10,10 +10,6 @@ import synnks.credenza.config.sso.HttpsTestCertificates.Identity
 
 import java.time.Duration
 
-final private[sso] case class HttpsTestConnection(baseUri: Uri, wrongHostUri: Uri, adminUri: Uri, caPem: String) {
-  override def toString: String = "HttpsTestConnection(<redacted>)"
-}
-
 private[sso] object HttpsTestContainers {
   private val image        = DockerImageName.parse(
     "wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3"
@@ -44,7 +40,7 @@ private[sso] object HttpsTestContainers {
           container
             .withExposedPorts(adminPort, httpsPort)
             .withLabel("credenza.fixture", "https")
-            .withCopyToContainer(Transferable.of(keyStore), keyStorePath)
+            .withCopyToContainer(Transferable.of(keyStore.toArray), keyStorePath)
             .withCommand(
               "--https-port",
               httpsPort.toString,

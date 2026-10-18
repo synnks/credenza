@@ -43,7 +43,7 @@ The unit suite covers the remaining decoding and error-classification combinatio
 [`HttpsTestContainers`](scala/synnks/credenza/config/sso/HttpsTestContainers.scala) pins the WireMock image and manages the fixture lifetime through Cats Effect `Resource`:
 
 - Each suite gets fresh valid-host and wrong-host containers, with host and mapped ports supplied by Testcontainers.
-- JDK keystore APIs turn the synthetic PEM fixtures into PKCS12 stores, which are copied into the containers.
+- Prebuilt synthetic PKCS12 stores are copied into the containers.
 - HTTP readiness checks have a 60-second startup deadline; Testcontainers logs startup failures and container output.
 - Cleanup is registered before startup, and Ryuk provides additional cleanup when the owning JVM exits.
 
@@ -52,10 +52,28 @@ Missing Docker or failed fixture startup fails the suite.
 ## Certificates
 
 The [PEM fixtures](resources/tls) are synthetic.
-[`HttpsTestCertificates`](scala/synnks/credenza/config/sso/HttpsTestCertificates.scala) builds the keystores and client trust context with JDK APIs.
+[`HttpsTestCertificates`](scala/synnks/credenza/config/sso/HttpsTestCertificates.scala) reads the CA certificate and prebuilt server keystores with FS2, supplying PKCS12 data as immutable byte chunks.
+It uses Scala SSL Config's PEM keystore and SSL context builders for CA trust.
+[`HttpsTestConnection`](scala/synnks/credenza/config/sso/HttpsTestConnection.scala) holds the immutable connection data.
 `valid.pem` covers `127.0.0.1` and `localhost`; `wrong-host.pem` covers `wrong.example.invalid`.
 The server private key is intentionally public test data; the CA signing key is not committed.
 Regenerate the certificates and key as a set before expiry, then rerun the suite.
+After changing the PEM fixtures, regenerate both server keystores from the repository root:
+
+```sh
+for identity in valid wrong-host; do
+  openssl pkcs12 -export \
+    -in "src/it/resources/tls/$identity.pem" \
+    -inkey src/it/resources/tls/server-key.pem \
+    -certfile src/it/resources/tls/ca.pem \
+    -name server \
+    -out "src/it/resources/tls/$identity.p12" \
+    -passout pass:synthetic-key-password
+done
+```
+
+The PKCS12 stores and their password are public synthetic test data.
+The tests load these files directly and do not parse private keys or generate server keystores.
 Inspect validity from the repository root with:
 
 ```sh
