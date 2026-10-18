@@ -95,14 +95,19 @@ class SsoTokenCacheTests extends CatsEffectSuite {
     }
   }
 
-  test("retain a fingerprint to detect an externally replaced cache record") {
+  test("retain the exact, stable SHA-256 fingerprint and detect an externally replaced record") {
     withCache { directory =>
       for {
         _      <- write(directory, session.name, fixture)
         first  <- SsoTokenCache.load(directory, session).map(_.toOption.getOrElse(fail("Expected cached token")))
+        same   <- SsoTokenCache.load(directory, session).map(_.toOption.getOrElse(fail("Expected cached token")))
         _      <- write(directory, session.name, fixture.replace("synthetic-access-token", "synthetic-new-access-token"))
         second <- SsoTokenCache.load(directory, session).map(_.toOption.getOrElse(fail("Expected cached token")))
-      } yield assertNotEquals(first.snapshot.sha256, second.snapshot.sha256)
+      } yield {
+        assertEquals(first.snapshot.sha256, "d9f0038fb95485201df1b514cb7bedff967c6bd42b42e713675f1fe3b6ea7bab")
+        assertEquals(same.snapshot.sha256, first.snapshot.sha256)
+        assertNotEquals(first.snapshot.sha256, second.snapshot.sha256)
+      }
     }
   }
 

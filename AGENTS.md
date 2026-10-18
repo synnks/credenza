@@ -15,27 +15,32 @@ Read the relevant source package and its mirrored tests before making changes.
 ## Build and Code Style
 
 - Keep the build as a single sbt project. Add dependencies and abstractions when the current work needs them.
+- Target Scala/JVM with GraalVM Native Image for standalone distribution.
 - Put project settings in `build.sbt` and sbt plugins in `project/plugins.sbt`.
 - Use Scalafmt for both source and build files; follow the surrounding code for conventions the formatter does not cover.
 - Update the README as working features are added.
+- Document current behavior and usage in READMEs; keep roadmap notes and change history out.
+- Keep documentation edits focused and use semantic lines rather than fixed-width wrapping.
 
 ## Testing and Validation
 
 Use an sbt runner and a JDK; the build has been verified with JDK 25.
 Scala and sbt versions are pinned in `build.sbt` and `project/build.properties`.
+Native-image validation requires an installed GraalVM JDK selected by `GRAALVM_HOME` or `JAVA_HOME`; report a missing toolchain rather than installing it.
 
 Start with the smallest affected test suite during development.
 - Compile with `sbt compile`.
 - Use `sbt test` for incremental testing: sbt 2 runs suites that are new, previously failed, or affected by changes.
-- Format source and build files with `sbt --batch "; scalafmtSbt; scalafmtAll"`.
+- Format source and build files with `sbt --server --batch "; scalafmtSbt; scalafmtAll"`.
 
 Before opening a PR with code or build changes, run:
 
 ```sh
-sbt --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile; testFull"
+sbt --server --batch "; scalafmtSbtCheck; scalafmtCheckAll; compile; testFull"
 ```
 
 `testFull` runs the complete suite without reusing cached test results.
+For HTTP/TLS changes, also run `sbt --server --batch integrationTest` as described in `src/it/README.md`.
 For documentation-only changes, check links and run `git diff --check`.
 Review the diff and report which checks ran.
 

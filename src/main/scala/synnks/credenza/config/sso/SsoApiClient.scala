@@ -1,138 +1,162 @@
 package synnks.credenza.config.sso
 
-import cats.effect.IO
-import io.circe.parser.{ decode, parse }
-import io.circe.syntax.*
-import io.circe.{ Codec, Decoder, Encoder }
-import org.http4s.client.Client
-import org.http4s.headers.`Content-Type`
-import org.http4s.{ Header, MediaType, Method, Request, Status, Uri }
-import org.typelevel.ci.CIString
-import synnks.credenza.config.model.SsoProfile
+import cats.effect.{ IO, Resource }
+import cats.syntax.all.*
+import io.netty.handler.ssl.SslProvider
+import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider
+import software.amazon.awssdk.awscore.retry.AwsRetryStrategy
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration
+import software.amazon.awssdk.core.exception.SdkException
+import software.amazon.awssdk.http.async.SdkAsyncHttpClient
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient
+import software.amazon.awssdk.regions.Region as AwsRegion
+import software.amazon.awssdk.services.sso.SsoAsyncClient
+import software.amazon.awssdk.services.sso.model.{ GetRoleCredentialsRequest, GetRoleCredentialsResponse }
+import software.amazon.awssdk.services.ssooidc.SsoOidcAsyncClient
+import software.amazon.awssdk.services.ssooidc.model.{ CreateTokenRequest, CreateTokenResponse }
+import synnks.credenza.config.model.{ Region, SsoProfile }
+import synnks.credenza.config.sso.SsoApiClient.*
 import synnks.credenza.config.sso.SsoCachedToken.{ RefreshMaterial, Secret }
 
-import java.io.IOException
+import java.net.URI
 import java.time.Instant
-import scala.concurrent.duration.{ FiniteDuration, SECONDS }
+import java.util.concurrent.{ CompletableFuture, TimeoutException }
+import scala.concurrent.duration.*
 
-final class SsoApiClient(client: Client[IO], ssoEndpoint: Uri, oidcEndpoint: Uri) {
+final class SsoApiClient private[sso] (sso: SsoAsyncClient, oidc: SsoOidcAsyncClient) {
+  def getRoleCredentials(profile: SsoProfile, token: Secret): IO[Either[Error, RoleCredentials]] =
+    execute {
+      sso.getRoleCredentials(
+        GetRoleCredentialsRequest
+          .builder()
+          .accountId(profile.accountId.value)
+          .roleName(profile.roleName.value)
+          .accessToken(token.value)
+          .build()
+      )
+    }(roleCredentials)
 
-  import SsoApiClient.*
+  def refresh(material: RefreshMaterial): IO[Either[Error, RefreshedToken]] =
+    execute {
+      oidc.createToken(
+        CreateTokenRequest
+          .builder()
+          .clientId(material.clientId.value)
+          .clientSecret(material.clientSecret.value)
+          .grantType("refresh_token")
+          .refreshToken(material.refreshToken.value)
+          .build()
+      )
+    }(refreshedToken)
 
-  def getRoleCredentials(profile: SsoProfile, token: Secret): IO[Either[Error, RoleCredentials]] = {
-    val uri     = ssoEndpoint
-      .withPath(ssoEndpoint.path / "federation" / "credentials")
-      .withQueryParams(Map("account_id" -> profile.accountId.value, "role_name" -> profile.roleName.value))
-    val request = Request[IO](Method.GET, uri)
-      .putHeaders(Header.Raw(CIString("x-amz-sso_bearer_token"), token.value))
-
-    execute(request, Service.Portal) { body =>
-      decode[RoleResponse](body)
-        .map(_.roleCredentials)
-        .left
-        .map(_ => Error.InvalidResponse)
+  private def execute[A, B](call: => CompletableFuture[A])(validate: A => Either[Error, B]): IO[Either[Error, B]] =
+    IO.fromCompletableFuture(IO.delay(call)).map(validate).recover {
+      case error: SdkException => Left(SsoSdkErrors.fromSdk(error))
+      case _: TimeoutException => Left(Error.TimedOut)
     }
-  }
-
-  def refresh(material: RefreshMaterial): IO[Either[Error, RefreshedToken]] = {
-    val body    = RefreshRequest(material.clientId, material.clientSecret, "refresh_token", material.refreshToken).asJson
-    val uri     = oidcEndpoint.withPath(oidcEndpoint.path / "token")
-    val request = Request[IO](Method.POST, uri)
-      .withEntity(body.noSpaces)
-      .putHeaders(`Content-Type`(MediaType.application.json))
-
-    execute(request, Service.Oidc) { body =>
-      decode[RefreshedToken](body).left
-        .map(_ => Error.InvalidResponse)
-    }
-  }
-
-  private def execute[A](request: Request[IO], service: Service)(
-    decode: String => Either[Error, A]
-  ): IO[Either[Error, A]] =
-    client
-      .run(request)
-      .use { response =>
-        response.as[String].map { body =>
-          if (response.status.isSuccess) decode(body)
-          else Left(classify(response.status, body, service))
-        }
-      }
-      .recover { case _: IOException => Left(Error.TransportUnavailable) }
 }
 
 object SsoApiClient {
-  private enum Service {
-    case Portal, Oidc
-  }
+  private[sso] val MaxResponseBytes = 1024 * 1024
 
-  final private case class RefreshRequest(
-    clientId: Secret,
-    clientSecret: Secret,
-    grantType: String,
-    refreshToken: Secret
-  ) derives Encoder.AsObject {
-    override def toString: String = "RefreshRequest(<redacted>)"
-  }
+  /** Owns one shared HTTP transport and both service clients, using SDK regional endpoint resolution. */
+  def resource(
+    region: Region,
+    timeout: FiniteDuration = 30.seconds
+  ): Resource[IO, SsoApiClient] =
+    resourceWithTransport(
+      region,
+      Resource.fromAutoCloseable(IO.blocking(NettyNioAsyncHttpClient.builder().sslProvider(SslProvider.JDK).build())),
+      timeout
+    )
+
+  private[sso] def resourceWithTransport(
+    region: Region,
+    transport: Resource[IO, SdkAsyncHttpClient],
+    timeout: FiniteDuration,
+    ssoEndpoint: Option[URI] = None,
+    oidcEndpoint: Option[URI] = None
+  ): Resource[IO, SsoApiClient] =
+    for {
+      responseLimit <- SsoResponseLimit.resource
+      configuration <- Resource.eval(IO.delay {
+                         ClientOverrideConfiguration
+                           .builder()
+                           .apiCallTimeout(java.time.Duration.ofNanos(timeout.toNanos))
+                           .retryStrategy(AwsRetryStrategy.doNotRetry())
+                           .addExecutionInterceptor(responseLimit)
+                           .build()
+                       })
+      http          <- transport
+      sso           <- Resource.fromAutoCloseable(IO.blocking {
+                         val builder = SsoAsyncClient
+                           .builder()
+                           .region(AwsRegion.of(region.value))
+                           .credentialsProvider(AnonymousCredentialsProvider.create())
+                           .httpClient(http)
+                           .overrideConfiguration(configuration)
+                         ssoEndpoint.foreach(builder.endpointOverride)
+                         builder.build()
+                       })
+      oidc          <- Resource.fromAutoCloseable(IO.blocking {
+                         val builder = SsoOidcAsyncClient
+                           .builder()
+                           .region(AwsRegion.of(region.value))
+                           .credentialsProvider(AnonymousCredentialsProvider.create())
+                           .httpClient(http)
+                           .overrideConfiguration(configuration)
+                         oidcEndpoint.foreach(builder.endpointOverride)
+                         builder.build()
+                       })
+    } yield new SsoApiClient(sso, oidc)
 
   final case class RoleCredentials private[sso] (
     accessKeyId: Secret,
     secretAccessKey: Secret,
     sessionToken: Secret,
     expiration: Instant
-  ) derives Decoder {
+  ) {
     override def toString: String = "RoleCredentials(<redacted>)"
   }
-
-  final private case class RoleResponse(roleCredentials: RoleCredentials) derives Decoder
 
   final case class RefreshedToken private[sso] (
     accessToken: Secret,
     expiresIn: FiniteDuration,
     refreshToken: Option[Secret]
-  ) derives Decoder {
+  ) {
     override def toString: String = "RefreshedToken(<redacted>)"
   }
 
   enum Error {
-    case AuthRequired
-    case InvalidGrant
-    case Throttled
-    case InvalidResponse
-    case RemoteFailure(status: Status)
-    case TransportUnavailable
+    case AuthRequired, InvalidGrant, Throttled, InvalidResponse, TimedOut, TransportUnavailable
+    case RemoteFailure(status: Int)
 
     def message: String = this match {
       case AuthRequired          => "The SSO session or client registration must be renewed."
       case InvalidGrant          => "The SSO refresh grant is invalid; sign in again."
       case Throttled             => "The SSO service is throttling requests."
       case InvalidResponse       => "The SSO service returned an invalid response."
-      case RemoteFailure(status) => s"The SSO service returned HTTP ${status.code}."
+      case RemoteFailure(status) => s"The SSO service returned HTTP $status."
+      case TimedOut              => "The SSO request timed out."
       case TransportUnavailable  => "Could not reach the SSO service."
     }
   }
 
-  private given Codec[Secret] = Codec.from(
-    Decoder.decodeString.emap(value => Secret.from(value).toRight("Expected a nonempty credential")),
-    Encoder.encodeString.contramap[Secret](_.value)
-  )
+  private def secret(value: String): Either[Error, Secret] =
+    Option(value).flatMap(Secret.from).toRight(Error.InvalidResponse)
 
-  private given Decoder[Instant] = Decoder.decodeLong.emap { millis =>
-    Either.cond(millis > 0L, Instant.ofEpochMilli(millis), "Expected a positive expiration")
-  }
+  private def roleCredentials(response: GetRoleCredentialsResponse): Either[Error, RoleCredentials] = for {
+    credentials  <- Option(response.roleCredentials()).toRight(Error.InvalidResponse)
+    accessKey    <- secret(credentials.accessKeyId())
+    secretKey    <- secret(credentials.secretAccessKey())
+    sessionToken <- secret(credentials.sessionToken())
+    expiration   <- Option(credentials.expiration()).filter(_.longValue > 0L).toRight(Error.InvalidResponse)
+  } yield RoleCredentials(accessKey, secretKey, sessionToken, Instant.ofEpochMilli(expiration.longValue))
 
-  private given Decoder[FiniteDuration] = Decoder.decodeInt.emap { seconds =>
-    Either.cond(seconds > 0, FiniteDuration(seconds.toLong, SECONDS), "Expected a positive duration")
-  }
+  private def refreshedToken(response: CreateTokenResponse): Either[Error, RefreshedToken] = for {
+    accessToken  <- secret(response.accessToken())
+    expiresIn    <- Option(response.expiresIn()).filter(_.intValue > 0).toRight(Error.InvalidResponse)
+    refreshToken <- Option(response.refreshToken()).traverse(secret)
+  } yield RefreshedToken(accessToken, expiresIn.longValue.seconds, refreshToken)
 
-  private def classify(status: Status, body: String, service: Service): Error = {
-    val errorCode = parse(body).toOption.flatMap(_.hcursor.get[String]("error").toOption)
-    (status, service, errorCode) match {
-      case (Status.TooManyRequests, _, _)                            => Error.Throttled
-      case (Status.Unauthorized, _, _)                               => Error.AuthRequired
-      case (Status.BadRequest, Service.Oidc, Some("invalid_client")) => Error.AuthRequired
-      case (Status.BadRequest, Service.Oidc, Some("invalid_grant"))  => Error.InvalidGrant
-      case _                                                         => Error.RemoteFailure(status)
-    }
-  }
 }
