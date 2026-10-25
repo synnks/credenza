@@ -18,7 +18,8 @@ Read the relevant source package and its mirrored tests before making changes.
 - Target Scala/JVM with GraalVM Native Image for standalone distribution.
 - Put project settings in `build.sbt` and sbt plugins in `project/plugins.sbt`.
 - Use Scalafmt for both source and build files; follow the surrounding code for conventions the formatter does not cover.
-- Update the README as working features are added.
+- Keep the top-level README focused on project purpose, architectural responsibilities, and supported behavior rather than implementation details or technology inventories; keep contributor guidance in `AGENTS.md`.
+- Use Mermaid for diagrams in documentation.
 - Document current behavior and usage in READMEs; keep roadmap notes and change history out.
 - Keep documentation edits focused and use semantic lines rather than fixed-width wrapping.
 
