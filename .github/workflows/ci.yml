@@ -31,10 +31,14 @@ jobs:
       - uses: sbt/setup-sbt@v1.5.13
 
       - name: Check formatting
-        run: sbt --server --batch "; scalafmtSbtCheck; scalafmtCheckAll"
+        run: sbt --server --batch scalafmtCheckRepo
 
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scala: [3.9.0, 3.10.0]
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -50,10 +54,10 @@ jobs:
       - uses: sbt/setup-sbt@v1.5.13
 
       - name: Compile and run full tests
-        run: sbt --server --batch "; compile; testFull"
+        run: sbt --server --batch "++ ${{ matrix.scala }}!; compile; testFull"
 
       - name: JVM integration tests
-        run: sbt --server --batch integrationTest
+        run: sbt --server --batch "++ ${{ matrix.scala }}!; integrationTest"
 
   greenlight:
     if: always()
