@@ -1,12 +1,12 @@
 import org.scalafmt.sbt.ScalafmtPlugin
 import sbt.plugins.JUnitXmlReportPlugin
 
-scalaVersion := "3.9.0"
+scalaVersion := "3.10.0"
 
 val AwsSdkVersion          = "2.56.0"
 val CatsCoreVersion        = "2.13.0"
 val CatsEffectVersion      = "3.7.1"
-val CirceVersion           = "0.14.16"
+val CirceVersion           = "0.14.17"
 val Fs2Version             = "3.14.0"
 val MUnitVersion           = "1.3.6"
 val MUnitCatsEffectVersion = "2.2.1"
