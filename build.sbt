@@ -16,6 +16,11 @@ val Slf4jVersion           = "2.0.20"
 val SttpModelVersion       = "1.9.0"
 val SslConfigVersion       = "0.7.2"
 
+val Jackson2Version = "2.22.4"
+val Jackson3Version = "3.2.4"
+val JLineVersion    = "4.4.8"
+val JsoupVersion    = "1.23.2"
+
 lazy val It              = config("it").extend(Runtime)
 lazy val integrationTest = taskKey[Unit]("Run all JVM integration tests with managed fixtures")
 
@@ -38,6 +43,14 @@ libraryDependencies ++= Seq(
   "org.wiremock"                 % "wiremock-standalone"  % WireMockVersion        % "it",
   "org.slf4j"                    % "slf4j-simple"         % Slf4jVersion           % "it"
 )
+
+// Keep Scaladoc and REPL dependency families aligned on patched versions.
+libraryDependencies ++= Seq(
+  ("com.fasterxml.jackson" % "jackson-bom"  % Jackson2Version % "scala-doc-tool").pomOnly(),
+  ("tools.jackson"         % "jackson-bom"  % Jackson3Version % "scala-doc-tool").pomOnly(),
+  ("org.jline"             % "jline-parent" % JLineVersion    % "scala-repl-tool").pomOnly()
+)
+dependencyOverrides += "org.jsoup" % "jsoup" % JsoupVersion
 
 lazy val root = rootProject
   .configs(It)
