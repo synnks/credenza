@@ -6,6 +6,12 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Keep Scala on its selected LTS minor line while allowing patch updates.
+    ignore:
+      - dependency-name: "org.scala-lang:scala3-library_3"
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
     groups:
       sbt-dependencies:
         patterns:
