@@ -6,7 +6,7 @@ scalaVersion := "3.9.0"
 val AwsSdkVersion          = "2.56.0"
 val CatsCoreVersion        = "2.13.0"
 val CatsEffectVersion      = "3.7.1"
-val CirceVersion           = "0.14.16"
+val CirceVersion           = "0.14.17"
 val Fs2Version             = "3.14.0"
 val MUnitVersion           = "1.3.6"
 val MUnitCatsEffectVersion = "2.2.1"
@@ -16,10 +16,10 @@ val Slf4jVersion           = "2.0.20"
 val SttpModelVersion       = "1.9.0"
 val SslConfigVersion       = "0.7.2"
 
-val Jackson2Version = "2.22.4"
-val Jackson3Version = "3.2.4"
-val JLineVersion    = "4.4.8"
-val JsoupVersion    = "1.23.2"
+val Jackson2Version = "2.23.0"
+val Jackson3Version = "3.3.0"
+val JLineVersion    = "4.5.0"
+val JsoupVersion    = "1.24.1"
 
 lazy val It              = config("it").extend(Runtime)
 lazy val integrationTest = taskKey[Unit]("Run all JVM integration tests with managed fixtures")
