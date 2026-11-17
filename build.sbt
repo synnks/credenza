@@ -18,7 +18,7 @@ val SslConfigVersion       = "0.7.2"
 
 val Jackson2Version = "2.23.0"
 val Jackson3Version = "3.3.0"
-val JLineVersion    = "4.5.0"
+val JLineVersion    = "4.7.0"
 val JsoupVersion    = "1.24.1"
 
 lazy val It              = config("it").extend(Runtime)
